@@ -1,7 +1,11 @@
 [package]
-name = "smart-slice"
-version = "0.1.0"
+name = "thin-slice"
+description = "Thin immutable zero-copy slice type"
+version = "0.0.1"
 edition = "2021"
+rust-version = "1.70"
+readme = "README.md"
+include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 
 [lib]
 
