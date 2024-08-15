@@ -1,0 +1,15 @@
+[package]
+name = "smart-slice"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+nanoid = "0.4.0"
+rand = "0.8.5"
+
+[[bench]]
+name = "bench"
+harness = false
