@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use smart_slice::SmartSlice;
+use thin_slice::ThinSlice;
 use std::time::Duration;
 
 fn cmp_short(c: &mut Criterion) {
@@ -30,13 +30,13 @@ fn cmp_short(c: &mut Criterion) {
     {
         /*  let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!(8))
-        .map(SmartSlice::from)
+        .map(ThinSlice::from)
         .collect::<Vec<_>>(); */
 
-        let x = SmartSlice::from(x);
-        let y = SmartSlice::from(y);
+        let x = ThinSlice::from(x);
+        let y = ThinSlice::from(y);
 
-        group.bench_function("SmartSlice", |b| {
+        group.bench_function("ThinSlice", |b| {
             b.iter(|| {
                 /*    let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -80,13 +80,13 @@ fn cmp_long(c: &mut Criterion) {
     {
         /* let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!())
-        .map(SmartSlice::from)
+        .map(ThinSlice::from)
         .collect::<Vec<_>>(); */
 
-        let x = SmartSlice::from(x);
-        let y = SmartSlice::from(y);
+        let x = ThinSlice::from(x);
+        let y = ThinSlice::from(y);
 
-        group.bench_function("SmartSlice", |b| {
+        group.bench_function("ThinSlice", |b| {
             b.iter(|| {
                 /* let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -128,13 +128,13 @@ fn eq_short(c: &mut Criterion) {
     {
         /*  let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!(8))
-        .map(SmartSlice::from)
+        .map(ThinSlice::from)
         .collect::<Vec<_>>(); */
 
-        let x = SmartSlice::from(x);
-        let y = SmartSlice::from(y);
+        let x = ThinSlice::from(x);
+        let y = ThinSlice::from(y);
 
-        group.bench_function("SmartSlice", |b| {
+        group.bench_function("ThinSlice", |b| {
             b.iter(|| {
                 /*   let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -178,13 +178,13 @@ fn eq_long(c: &mut Criterion) {
     {
         /*     let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!())
-        .map(SmartSlice::from)
+        .map(ThinSlice::from)
         .collect::<Vec<_>>(); */
 
-        let x = SmartSlice::from(x);
-        let y = SmartSlice::from(y);
+        let x = ThinSlice::from(x);
+        let y = ThinSlice::from(y);
 
-        group.bench_function("SmartSlice", |b| {
+        group.bench_function("ThinSlice", |b| {
             b.iter(|| {
                 /*  let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -208,9 +208,9 @@ fn ctor(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("SmartSlice", |b| {
+    group.bench_function("ThinSlice", |b| {
         b.iter(|| {
-            let _x = SmartSlice::from(nanoid::nanoid!());
+            let _x = ThinSlice::from(nanoid::nanoid!());
         });
     });
 }

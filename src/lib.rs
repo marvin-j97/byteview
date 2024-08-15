@@ -1,8 +1,8 @@
 //! An immutable byte slice that may be inlined, and can be partially cloned without heap allocation.
 //!
 //! ```
-//! # use smart_slice::SmartSlice;
-//! let slice = SmartSlice::from("helloworld_thisisalongstring");
+//! # use thin_slice::ThinSlice;
+//! let slice = ThinSlice::from("helloworld_thisisalongstring");
 //!
 //! // No heap allocation - increases the ref count like an Arc<[u8]>
 //! let full_copy = slice.clone();
@@ -54,19 +54,19 @@ struct HeapAllocationHeader {
 /// - Polars' strings
 /// - CedarDB's German strings
 #[repr(C)]
-pub struct SmartSlice {
+pub struct ThinSlice {
     len: u32,
     rest: [u8; INLINE_SIZE],
     data: *const u8,
 }
 
-impl Clone for SmartSlice {
+impl Clone for ThinSlice {
     fn clone(&self) -> Self {
         self.slice(..)
     }
 }
 
-impl Drop for SmartSlice {
+impl Drop for ThinSlice {
     fn drop(&mut self) {
         if !self.is_inline() {
             unsafe {
@@ -90,13 +90,13 @@ impl Drop for SmartSlice {
     }
 }
 
-impl Eq for SmartSlice {}
+impl Eq for ThinSlice {}
 
-impl std::cmp::PartialEq for SmartSlice {
+impl std::cmp::PartialEq for ThinSlice {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            let src_ptr = self as *const SmartSlice as *const u8;
-            let other_ptr: *const u8 = other as *const SmartSlice as *const u8;
+            let src_ptr = self as *const ThinSlice as *const u8;
+            let other_ptr: *const u8 = other as *const ThinSlice as *const u8;
 
             let a = *(src_ptr as *const u64);
             let b = *(other_ptr as *const u64);
@@ -126,7 +126,7 @@ impl std::cmp::PartialEq for SmartSlice {
     }
 }
 
-impl std::cmp::Ord for SmartSlice {
+impl std::cmp::Ord for ThinSlice {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.is_inline() && other.is_inline() {
             return self.rest.cmp(&other.rest);
@@ -164,19 +164,19 @@ impl std::cmp::Ord for SmartSlice {
     }
 }
 
-impl std::cmp::PartialOrd for SmartSlice {
+impl std::cmp::PartialOrd for ThinSlice {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl std::fmt::Debug for SmartSlice {
+impl std::fmt::Debug for ThinSlice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.deref())
     }
 }
 
-impl SmartSlice {
+impl ThinSlice {
     #[inline]
     const fn is_inline(&self) -> bool {
         self.len <= INLINE_SIZE as u32
@@ -379,7 +379,7 @@ impl SmartSlice {
     }
 }
 
-impl std::ops::Deref for SmartSlice {
+impl std::ops::Deref for ThinSlice {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -393,37 +393,37 @@ impl std::ops::Deref for SmartSlice {
     }
 }
 
-impl From<&[u8]> for SmartSlice {
+impl From<&[u8]> for ThinSlice {
     fn from(value: &[u8]) -> Self {
         Self::new(value)
     }
 }
 
-impl From<&str> for SmartSlice {
+impl From<&str> for ThinSlice {
     fn from(value: &str) -> Self {
         Self::new(value.as_bytes())
     }
 }
 
-impl From<String> for SmartSlice {
+impl From<String> for ThinSlice {
     fn from(value: String) -> Self {
         Self::new(value.as_bytes())
     }
 }
 
-impl From<Vec<u8>> for SmartSlice {
+impl From<Vec<u8>> for ThinSlice {
     fn from(value: Vec<u8>) -> Self {
         Self::new(&value)
     }
 }
 
-impl From<std::sync::Arc<[u8]>> for SmartSlice {
+impl From<std::sync::Arc<[u8]>> for ThinSlice {
     fn from(value: std::sync::Arc<[u8]>) -> Self {
         Self::new(&value)
     }
 }
 
-impl From<std::sync::Arc<str>> for SmartSlice {
+impl From<std::sync::Arc<str>> for ThinSlice {
     fn from(value: std::sync::Arc<str>) -> Self {
         Self::new(value.as_bytes())
     }
@@ -431,16 +431,16 @@ impl From<std::sync::Arc<str>> for SmartSlice {
 
 #[cfg(test)]
 mod tests {
-    use crate::SmartSlice;
+    use crate::ThinSlice;
 
     #[test]
     fn memsize() {
-        assert_eq!(24, std::mem::size_of::<SmartSlice>());
+        assert_eq!(24, std::mem::size_of::<ThinSlice>());
     }
 
     #[test]
     fn nostr() {
-        let slice = SmartSlice::from("");
+        let slice = ThinSlice::from("");
         assert_eq!(0, slice.len());
         assert_eq!(&*slice, b"");
         assert_eq!(1, slice.ref_count());
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn short_str() {
-        let slice = SmartSlice::from("abcdef");
+        let slice = ThinSlice::from("abcdef");
         assert_eq!(6, slice.len());
         assert_eq!(&*slice, b"abcdef");
         assert_eq!(1, slice.ref_count());
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn medium_str() {
-        let slice = SmartSlice::from("abcdefabcdef");
+        let slice = ThinSlice::from("abcdefabcdef");
         assert_eq!(12, slice.len());
         assert_eq!(&*slice, b"abcdefabcdef");
         assert_eq!(1, slice.ref_count());
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn long_str() {
-        let slice = SmartSlice::from("abcdefabcdefabcdefab");
+        let slice = ThinSlice::from("abcdefabcdefabcdefab");
         assert_eq!(20, slice.len());
         assert_eq!(&*slice, b"abcdefabcdefabcdefab");
         assert_eq!(1, slice.ref_count());
@@ -472,7 +472,7 @@ mod tests {
 
     #[test]
     fn long_str_clone() {
-        let slice = SmartSlice::from("abcdefabcdefabcdefab");
+        let slice = ThinSlice::from("abcdefabcdefabcdefab");
         let copy = slice.clone();
         assert_eq!(slice, copy);
 
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn long_str_slice() {
-        let slice = SmartSlice::from("helloworld_thisisalongstring");
+        let slice = ThinSlice::from("helloworld_thisisalongstring");
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn long_str_slice_twice() {
-        let slice = SmartSlice::from("helloworld_thisisalongstring");
+        let slice = ThinSlice::from("helloworld_thisisalongstring");
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn long_str_slice_downgrade() {
-        let slice = SmartSlice::from("helloworld_thisisalongstring");
+        let slice = ThinSlice::from("helloworld_thisisalongstring");
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn short_str_clone() {
-        let slice = SmartSlice::from("abcdef");
+        let slice = ThinSlice::from("abcdef");
         let copy = slice.clone();
         assert_eq!(slice, copy);
 
@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn short_str_slice_full() {
-        let slice = SmartSlice::from("abcdef");
+        let slice = ThinSlice::from("abcdef");
         let copy = slice.slice(..);
         assert_eq!(slice, copy);
 
@@ -563,7 +563,7 @@ mod tests {
 
     #[test]
     fn short_str_slice_part() {
-        let slice = SmartSlice::from("abcdef");
+        let slice = ThinSlice::from("abcdef");
         let copy = slice.slice(3..);
 
         assert_eq!(1, slice.ref_count());
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn short_str_slice_empty() {
-        let slice = SmartSlice::from("abcdef");
+        let slice = ThinSlice::from("abcdef");
         let copy = slice.slice(0..0);
 
         assert_eq!(1, slice.ref_count());
@@ -589,50 +589,50 @@ mod tests {
 
     #[test]
     fn tiny_str_cmp() {
-        let a = SmartSlice::from("abc");
-        let b = SmartSlice::from("def");
+        let a = ThinSlice::from("abc");
+        let b = ThinSlice::from("def");
         assert!(a < b);
     }
 
     #[test]
     fn tiny_str_eq() {
-        let a = SmartSlice::from("abc");
-        let b = SmartSlice::from("def");
+        let a = ThinSlice::from("abc");
+        let b = ThinSlice::from("def");
         assert!(a != b);
     }
 
     #[test]
     fn long_str_eq() {
-        let a = SmartSlice::from("abcdefabcdefabcdefabcdef");
-        let b = SmartSlice::from("xycdefabcdefabcdefabcdef");
+        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
+        let b = ThinSlice::from("xycdefabcdefabcdefabcdef");
         assert!(a != b);
     }
 
     #[test]
     fn long_str_cmp() {
-        let a = SmartSlice::from("abcdefabcdefabcdefabcdef");
-        let b = SmartSlice::from("xycdefabcdefabcdefabcdef");
+        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
+        let b = ThinSlice::from("xycdefabcdefabcdefabcdef");
         assert!(a < b);
     }
 
     #[test]
     fn long_str_eq_2() {
-        let a = SmartSlice::from("abcdefabcdefabcdefabcdef");
-        let b = SmartSlice::from("abcdefabcdefabcdefabcdef");
+        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
+        let b = ThinSlice::from("abcdefabcdefabcdefabcdef");
         assert!(a == b);
     }
 
     #[test]
     fn long_str_cmp_2() {
-        let a = SmartSlice::from("abcdefabcdefabcdefabcdef");
-        let b = SmartSlice::from("abcdefabcdefabcdefabcdeg");
+        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
+        let b = ThinSlice::from("abcdefabcdefabcdefabcdeg");
         assert!(a < b);
     }
 
     #[test]
     fn long_str_cmp_3() {
-        let a = SmartSlice::from("abcdefabcdefabcdefabcde");
-        let b = SmartSlice::from("abcdefabcdefabcdefabcdef");
+        let a = ThinSlice::from("abcdefabcdefabcdefabcde");
+        let b = ThinSlice::from("abcdefabcdefabcdefabcdef");
         assert!(a < b);
     }
 }
