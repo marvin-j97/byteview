@@ -279,13 +279,12 @@ impl ThinSlice {
     }
 
     /// Returns the ref_count of the underlying heap allocation.
+    #[doc(hidden)]
     pub fn ref_count(&self) -> u64 {
         if self.is_inline() {
             1
         } else {
-            self.get_heap_region()
-                .ref_count
-                .load(std::sync::atomic::Ordering::Acquire)
+            self.get_heap_region().ref_count.load(Ordering::Acquire)
         }
     }
 
