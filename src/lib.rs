@@ -184,6 +184,26 @@ impl std::fmt::Debug for ThinSlice {
     }
 }
 
+impl Deref for ThinSlice {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        let len = self.len as usize;
+
+        if self.is_inline() {
+            self.get_short_slice(len)
+        } else {
+            self.get_long_slice(len)
+        }
+    }
+}
+
+impl std::hash::Hash for ThinSlice {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.deref().hash(state)
+    }
+}
+
 impl ThinSlice {
     #[inline]
     const fn is_inline(&self) -> bool {
@@ -370,14 +390,14 @@ impl ThinSlice {
                 data: std::ptr::null(),
                 rest: buf,
             }
-        } else {
+        } else if new_len > INLINE_SIZE && self_len > INLINE_SIZE {
             let mut buf = self.rest;
 
             let heap_region = self.get_heap_region();
 
-            heap_region
-                .ref_count
-                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            let rc_before = heap_region.ref_count.fetch_add(1, Ordering::Release);
+
+            debug_assert!(rc_before < u64::MAX, "refcount overflow");
 
             // Set new prefix
             unsafe {
@@ -387,38 +407,54 @@ impl ThinSlice {
 
             Self {
                 len: u32::try_from(new_len).unwrap(),
+                // SAFETY: self.data must be defined
+                // we cannot get a range larger than our own slice
+                // so we cannot be inlined while the requested slice is not inlinable
                 data: unsafe { self.data.add(begin) },
                 rest: buf,
             }
+        } else {
+            unreachable!()
         }
     }
 
     /// Returns `true` if the slice is empty.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns the amount of bytes in the slice.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len as usize
     }
 
+    fn get_short_slice(&self, len: usize) -> &[u8] {
+        debug_assert!(len <= 12, "cannot get short slice - slice is not inlined");
+
+        // SAFETY: Shall only be called if slice is inlined
+        unsafe { std::slice::from_raw_parts(self.rest.as_ptr(), len) }
+    }
+
     fn get_long_slice(&self, len: usize) -> &[u8] {
+        debug_assert!(len >= 12, "cannot get long slice - slice is inlined");
+
+        // SAFETY: Shall only be called if slice is heap allocated
         unsafe { std::slice::from_raw_parts(self.data, len) }
     }
 }
 
-impl std::ops::Deref for ThinSlice {
-    type Target = [u8];
+impl AsRef<[u8]> for ThinSlice {
+    fn as_ref(&self) -> &[u8] {
+        self.deref()
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
-        let len = self.len as usize;
-
-        if self.is_inline() {
-            unsafe { std::slice::from_raw_parts(self.rest.as_ptr(), len) }
-        } else {
-            self.get_long_slice(len)
-        }
+impl FromIterator<u8> for ThinSlice {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = u8>,
+    {
+        Self::from(iter.into_iter().collect::<Vec<u8>>())
     }
 }
 
@@ -428,15 +464,9 @@ impl From<&[u8]> for ThinSlice {
     }
 }
 
-impl From<&str> for ThinSlice {
-    fn from(value: &str) -> Self {
-        Self::new(value.as_bytes())
-    }
-}
-
-impl From<String> for ThinSlice {
-    fn from(value: String) -> Self {
-        Self::new(value.as_bytes())
+impl From<Arc<[u8]>> for ThinSlice {
+    fn from(value: Arc<[u8]>) -> Self {
+        Self::new(&value)
     }
 }
 
@@ -446,25 +476,48 @@ impl From<Vec<u8>> for ThinSlice {
     }
 }
 
-impl From<std::sync::Arc<[u8]>> for ThinSlice {
-    fn from(value: std::sync::Arc<[u8]>) -> Self {
-        Self::new(&value)
+impl From<&str> for ThinSlice {
+    fn from(value: &str) -> Self {
+        Self::from(value.as_bytes())
     }
 }
 
-impl From<std::sync::Arc<str>> for ThinSlice {
-    fn from(value: std::sync::Arc<str>) -> Self {
-        Self::new(value.as_bytes())
+impl From<String> for ThinSlice {
+    fn from(value: String) -> Self {
+        Self::from(value.as_bytes())
+    }
+}
+
+impl From<Arc<str>> for ThinSlice {
+    fn from(value: Arc<str>) -> Self {
+        Self::from(&*value)
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for ThinSlice {
+    fn from(value: [u8; N]) -> Self {
+        Self::from(value.as_slice())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ThinSlice;
+    use crate::{HeapAllocationHeader, ThinSlice};
 
     #[test]
     fn memsize() {
         assert_eq!(24, std::mem::size_of::<ThinSlice>());
+        assert_eq!(
+            32,
+            std::mem::size_of::<ThinSlice>() + std::mem::size_of::<HeapAllocationHeader>()
+        );
+    }
+
+    #[test]
+    fn cmp_misc_1() {
+        let a = ThinSlice::from("abcdef");
+        let b = ThinSlice::from("abcdefhelloworldhelloworld");
+        assert!(a < b);
     }
 
     #[test]
