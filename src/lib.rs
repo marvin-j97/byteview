@@ -75,21 +75,14 @@ impl Clone for ThinSlice {
 impl Drop for ThinSlice {
     fn drop(&mut self) {
         if !self.is_inline() {
-            unsafe {
-                let rc_before = self
-                    .get_heap_region()
-                    .ref_count
-                    .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            let heap_region = self.get_heap_region();
+            let rc_before = heap_region.ref_count.fetch_sub(1, Ordering::AcqRel);
 
-                if rc_before == 1 {
-                    let heap_region = self.get_heap_region();
+            if rc_before == 1 {
+                unsafe {
+                    // The RC is now 0, so free heap allocation
                     let ptr = heap_region as *const HeapAllocationHeader as *mut u8;
-
-                    let layout = std::alloc::Layout::from_size_align_unchecked(
-                        std::mem::size_of::<HeapAllocationHeader>() + self.len(),
-                        1,
-                    );
-                    std::alloc::dealloc(ptr, layout);
+                    drop(Box::from_raw(ptr));
                 }
             }
         }
