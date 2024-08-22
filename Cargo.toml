@@ -3,7 +3,7 @@ name = "thin-slice"
 description = "Thin immutable zero-copy slice type"
 version = "0.0.1"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.74"
 readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 
