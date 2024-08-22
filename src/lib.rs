@@ -29,7 +29,11 @@
 //! drop(slice);
 //! ```
 
-use std::{ops::Deref, sync::atomic::AtomicU64};
+use std::{
+    ops::Deref,
+    sync::Arc,
+    sync::{atomic::AtomicU64, atomic::Ordering},
+};
 
 const INLINE_SIZE: usize = 12;
 
@@ -38,9 +42,11 @@ struct HeapAllocationHeader {
     ref_count: AtomicU64,
 }
 
+// TODO: track allocations somehow in tests
+
 /// An immutable byte slice
 ///
-/// May be inlined (no pointer dereference or heap allocation)
+/// Will be inlined (no pointer dereference or heap allocation)
 /// if it is 12 characters or shorter.
 ///
 /// A single heap allocation will be shared between multiple slices.
@@ -48,11 +54,11 @@ struct HeapAllocationHeader {
 ///
 /// The design is very similar to:
 ///
-/// - [Umbra](<https://db.in.tum.de/~freitag/papers/p29-neumann-cidr20.pdf>)
-/// - Apache Arrow's String View
-/// - Velox' String View
-/// - Polars' strings
-/// - CedarDB's German strings
+/// - [Polars' strings](<https://pola.rs/posts/polars-string-type>)
+/// - [CedarDB's German strings](<https://cedardb.com/blog/german_strings>)
+/// - [Umbra's string](<https://db.in.tum.de/~freitag/papers/p29-neumann-cidr20.pdf>)
+/// - [Velox' String View](https://facebookincubator.github.io/velox/develop/vectors.html)
+/// - [Apache Arrow's String View](https://arrow.apache.org/docs/cpp/api/datatype.html#_CPPv4N5arrow14BinaryViewType6c_typeE)
 #[repr(C)]
 pub struct ThinSlice {
     len: u32,
@@ -106,6 +112,11 @@ impl std::cmp::PartialEq for ThinSlice {
             }
         }
 
+        // NOTE: At this point we know
+        // both strings must have the same prefix and same length
+        //
+        // If we are inlined, the other string must be inlined too
+        // So checking the prefix is enough
         if self.is_inline() {
             unsafe {
                 let a = *(self.rest.as_ptr() as *const u32);
@@ -118,6 +129,8 @@ impl std::cmp::PartialEq for ThinSlice {
         let len = (self.len as usize) - 4;
 
         unsafe {
+            // SAFETY: We cannot reach this branch if we are inlined
+            // so self.data must be defined
             let a = std::slice::from_raw_parts(self.data.add(4), len);
             let b = std::slice::from_raw_parts(other.data.add(4), len);
 
@@ -145,6 +158,8 @@ impl std::cmp::Ord for ThinSlice {
                 x => return x,
             }
         }
+
+        debug_assert!(!self.data.is_null(), "data is null");
 
         unsafe {
             let a = std::slice::from_raw_parts(self.data, self.len as usize);
@@ -221,11 +236,11 @@ impl ThinSlice {
 
                 let heap_ptr = std::alloc::alloc(layout);
 
-                // SAFETY: We store a pointer to the copied slice, which comes directly after the header
-                str.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
-
                 // SAFETY: Copy prefix, we have space for 4 characters
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), str.rest.as_mut_ptr(), 4);
+
+                // SAFETY: We store a pointer to the copied slice, which comes directly after the header
+                str.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
 
                 // Copy byte slice into heap allocation
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), str.data as *mut u8, slice_len);
@@ -246,7 +261,14 @@ impl ThinSlice {
     }
 
     fn get_heap_region(&self) -> &HeapAllocationHeader {
+        debug_assert!(
+            !self.is_inline(),
+            "inline slice does not have a heap allocation"
+        );
+
         unsafe {
+            // SAFETY: Shall only be used when the slice is not inlined
+            // otherwise the heap pointer would be garbage
             let ptr_bytes = std::slice::from_raw_parts(self.rest.as_ptr().add(4), 8);
             let ptr = u64::from_le_bytes(ptr_bytes.try_into().unwrap());
             let ptr = ptr as *const u8;
@@ -273,13 +295,25 @@ impl ThinSlice {
     }
 
     /// Clones the contents of this slice into an independently tracked slice.
-    pub fn to_owned(&self) -> std::sync::Arc<[u8]> {
+    pub fn to_owned(&self) -> Arc<[u8]> {
         self.deref().into()
     }
 
     /// Clones the given range of the existing slice without heap allocation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use thin_slice::ThinSlice;
+    /// let slice = ThinSlice::from("helloworld_thisisalongstring");
+    /// let copy = slice.slice(11..);
+    /// assert_eq!(b"thisisalongstring", &*copy);
+    /// ```
     pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Self {
         use core::ops::Bound;
+
+        // Credits: This is essentially taken from
+        // https://github.com/tokio-rs/bytes/blob/291df5acc94b82a48765e67eeb1c1a2074539e68/src/bytes.rs#L264
 
         let self_len = self.len();
 
@@ -310,11 +344,14 @@ impl ThinSlice {
 
         let new_len = end - begin;
 
-        //
+        // Target and destination slices are inlined
+        // so we just need to memcpy the struct, and replace
+        // the inline slice with the requested range
         if new_len <= INLINE_SIZE && self_len <= INLINE_SIZE {
             let mut buf = self.rest;
 
             unsafe {
+                // Replace with requested range
                 std::ptr::copy_nonoverlapping(
                     self.rest[begin..end].as_ptr(),
                     buf.as_mut_ptr(),
