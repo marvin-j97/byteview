@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use thin_slice::ThinSlice;
 use std::time::Duration;
+use thin_slice::ThinSlice;
 
 fn cmp_short(c: &mut Criterion) {
     let mut group = c.benchmark_group("cmp short");
