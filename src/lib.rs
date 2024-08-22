@@ -505,6 +505,7 @@ mod tests {
     use crate::{HeapAllocationHeader, ThinSlice};
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn memsize() {
         assert_eq!(24, std::mem::size_of::<ThinSlice>());
         assert_eq!(
