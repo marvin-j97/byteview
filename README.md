@@ -7,6 +7,8 @@
 
 An immutable byte slice that may be inlined, and can be partially cloned without heap allocation.
 
+![Memory layout](./byteview.png)
+
 ## Memory usage
 
 Allocating 200M "helloworld" (len=10) strings:
