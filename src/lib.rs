@@ -1,8 +1,8 @@
 //! An immutable byte slice that may be inlined, and can be partially cloned without heap allocation.
 //!
 //! ```
-//! # use thin_slice::ThinSlice;
-//! let slice = ThinSlice::from("helloworld_thisisalongstring");
+//! # use byteview::ByteView;
+//! let slice = ByteView::from("helloworld_thisisalongstring");
 //!
 //! // No heap allocation - increases the ref count like an Arc<[u8]>
 //! let full_copy = slice.clone();
@@ -61,14 +61,14 @@ struct HeapAllocationHeader {
 /// - [Velox' String View](https://facebookincubator.github.io/velox/develop/vectors.html)
 /// - [Apache Arrow's String View](https://arrow.apache.org/docs/cpp/api/datatype.html#_CPPv4N5arrow14BinaryViewType6c_typeE)
 #[repr(C)]
-pub struct ThinSlice {
+pub struct ByteView {
     len: u32,
     prefix: [u8; PREFIX_SIZE],
     rest: [u8; 8],
     data: *const u8,
 }
 
-impl Default for ThinSlice {
+impl Default for ByteView {
     fn default() -> Self {
         Self {
             len: 0,
@@ -79,13 +79,13 @@ impl Default for ThinSlice {
     }
 }
 
-impl Clone for ThinSlice {
+impl Clone for ByteView {
     fn clone(&self) -> Self {
         self.slice(..)
     }
 }
 
-impl Drop for ThinSlice {
+impl Drop for ByteView {
     fn drop(&mut self) {
         if self.is_inline() {
             return;
@@ -105,13 +105,13 @@ impl Drop for ThinSlice {
     }
 }
 
-impl Eq for ThinSlice {}
+impl Eq for ByteView {}
 
-impl std::cmp::PartialEq for ThinSlice {
+impl std::cmp::PartialEq for ByteView {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            let src_ptr = self as *const ThinSlice as *const u8;
-            let other_ptr: *const u8 = other as *const ThinSlice as *const u8;
+            let src_ptr = self as *const ByteView as *const u8;
+            let other_ptr: *const u8 = other as *const ByteView as *const u8;
 
             let a = *(src_ptr as *const u64);
             let b = *(other_ptr as *const u64);
@@ -135,7 +135,7 @@ impl std::cmp::PartialEq for ThinSlice {
     }
 }
 
-impl std::cmp::Ord for ThinSlice {
+impl std::cmp::Ord for ByteView {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         use std::cmp::Ordering::Equal;
 
@@ -154,19 +154,19 @@ impl std::cmp::Ord for ThinSlice {
     }
 }
 
-impl std::cmp::PartialOrd for ThinSlice {
+impl std::cmp::PartialOrd for ByteView {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl std::fmt::Debug for ThinSlice {
+impl std::fmt::Debug for ByteView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.deref())
     }
 }
 
-impl Deref for ThinSlice {
+impl Deref for ByteView {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -180,13 +180,13 @@ impl Deref for ThinSlice {
     }
 }
 
-impl std::hash::Hash for ThinSlice {
+impl std::hash::Hash for ByteView {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.deref().hash(state)
     }
 }
 
-impl ThinSlice {
+impl ByteView {
     #[inline]
     const fn is_inline(&self) -> bool {
         self.len <= INLINE_SIZE as u32
@@ -309,8 +309,8 @@ impl ThinSlice {
     /// # Examples
     ///
     /// ```
-    /// # use thin_slice::ThinSlice;
-    /// let slice = ThinSlice::from("helloworld_thisisalongstring");
+    /// # use thin_slice::ByteView;
+    /// let slice = ByteView::from("helloworld_thisisalongstring");
     /// let copy = slice.slice(11..);
     /// assert_eq!(b"thisisalongstring", &*copy);
     /// ```
@@ -434,13 +434,13 @@ impl ThinSlice {
     }
 }
 
-impl AsRef<[u8]> for ThinSlice {
+impl AsRef<[u8]> for ByteView {
     fn as_ref(&self) -> &[u8] {
         self.deref()
     }
 }
 
-impl FromIterator<u8> for ThinSlice {
+impl FromIterator<u8> for ByteView {
     fn from_iter<T>(iter: T) -> Self
     where
         T: IntoIterator<Item = u8>,
@@ -449,43 +449,43 @@ impl FromIterator<u8> for ThinSlice {
     }
 }
 
-impl From<&[u8]> for ThinSlice {
+impl From<&[u8]> for ByteView {
     fn from(value: &[u8]) -> Self {
         Self::new(value)
     }
 }
 
-impl From<Arc<[u8]>> for ThinSlice {
+impl From<Arc<[u8]>> for ByteView {
     fn from(value: Arc<[u8]>) -> Self {
         Self::new(&value)
     }
 }
 
-impl From<Vec<u8>> for ThinSlice {
+impl From<Vec<u8>> for ByteView {
     fn from(value: Vec<u8>) -> Self {
         Self::new(&value)
     }
 }
 
-impl From<&str> for ThinSlice {
+impl From<&str> for ByteView {
     fn from(value: &str) -> Self {
         Self::from(value.as_bytes())
     }
 }
 
-impl From<String> for ThinSlice {
+impl From<String> for ByteView {
     fn from(value: String) -> Self {
         Self::from(value.as_bytes())
     }
 }
 
-impl From<Arc<str>> for ThinSlice {
+impl From<Arc<str>> for ByteView {
     fn from(value: Arc<str>) -> Self {
         Self::from(&*value)
     }
 }
 
-impl<const N: usize> From<[u8; N]> for ThinSlice {
+impl<const N: usize> From<[u8; N]> for ByteView {
     fn from(value: [u8; N]) -> Self {
         Self::from(value.as_slice())
     }
@@ -493,13 +493,13 @@ impl<const N: usize> From<[u8; N]> for ThinSlice {
 
 #[cfg(feature = "serde")]
 mod serde {
-    use super::ThinSlice;
+    use super::ByteView;
     use serde::de::{self, Visitor};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::fmt;
     use std::ops::Deref;
 
-    impl Serialize for ThinSlice {
+    impl Serialize for ByteView {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -508,57 +508,57 @@ mod serde {
         }
     }
 
-    impl<'de> Deserialize<'de> for ThinSlice {
+    impl<'de> Deserialize<'de> for ByteView {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            struct ThinSliceVisitor;
+            struct ByteViewVisitor;
 
-            impl<'de> Visitor<'de> for ThinSliceVisitor {
-                type Value = ThinSlice;
+            impl<'de> Visitor<'de> for ByteViewVisitor {
+                type Value = ByteView;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                     formatter.write_str("a byte array")
                 }
 
-                fn visit_bytes<E>(self, v: &[u8]) -> Result<ThinSlice, E>
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<ByteView, E>
                 where
                     E: de::Error,
                 {
-                    Ok(ThinSlice::from(v))
+                    Ok(ByteView::from(v))
                 }
             }
 
-            deserializer.deserialize_bytes(ThinSliceVisitor)
+            deserializer.deserialize_bytes(ByteViewVisitor)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{HeapAllocationHeader, ThinSlice};
+    use crate::{ByteView, HeapAllocationHeader};
 
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn memsize() {
-        assert_eq!(24, std::mem::size_of::<ThinSlice>());
+        assert_eq!(24, std::mem::size_of::<ByteView>());
         assert_eq!(
             32,
-            std::mem::size_of::<ThinSlice>() + std::mem::size_of::<HeapAllocationHeader>()
+            std::mem::size_of::<ByteView>() + std::mem::size_of::<HeapAllocationHeader>()
         );
     }
 
     #[test]
     fn cmp_misc_1() {
-        let a = ThinSlice::from("abcdef");
-        let b = ThinSlice::from("abcdefhelloworldhelloworld");
+        let a = ByteView::from("abcdef");
+        let b = ByteView::from("abcdefhelloworldhelloworld");
         assert!(a < b);
     }
 
     #[test]
     fn nostr() {
-        let slice = ThinSlice::from("");
+        let slice = ByteView::from("");
         assert_eq!(0, slice.len());
         assert_eq!(&*slice, b"");
         assert_eq!(1, slice.ref_count());
@@ -566,7 +566,7 @@ mod tests {
 
     #[test]
     fn default_str() {
-        let slice = ThinSlice::default();
+        let slice = ByteView::default();
         assert_eq!(0, slice.len());
         assert_eq!(&*slice, b"");
         assert_eq!(1, slice.ref_count());
@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn short_str() {
-        let slice = ThinSlice::from("abcdef");
+        let slice = ByteView::from("abcdef");
         assert_eq!(6, slice.len());
         assert_eq!(&*slice, b"abcdef");
         assert_eq!(1, slice.ref_count());
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn medium_str() {
-        let slice = ThinSlice::from("abcdefabcdef");
+        let slice = ByteView::from("abcdefabcdef");
         assert_eq!(12, slice.len());
         assert_eq!(&*slice, b"abcdefabcdef");
         assert_eq!(1, slice.ref_count());
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn long_str() {
-        let slice = ThinSlice::from("abcdefabcdefabcdefab");
+        let slice = ByteView::from("abcdefabcdefabcdefab");
         assert_eq!(20, slice.len());
         assert_eq!(&*slice, b"abcdefabcdefabcdefab");
         assert_eq!(1, slice.ref_count());
@@ -601,7 +601,7 @@ mod tests {
 
     #[test]
     fn long_str_clone() {
-        let slice = ThinSlice::from("abcdefabcdefabcdefab");
+        let slice = ByteView::from("abcdefabcdefabcdefab");
         let copy = slice.clone();
         assert_eq!(slice, copy);
         assert_eq!(copy.prefix, slice.prefix);
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn long_str_slice_full() {
-        let slice = ThinSlice::from("helloworld_thisisalongstring");
+        let slice = ByteView::from("helloworld_thisisalongstring");
 
         let copy = slice.slice(..);
         assert_eq!(copy, slice);
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn long_str_slice() {
-        let slice = ThinSlice::from("helloworld_thisisalongstring");
+        let slice = ByteView::from("helloworld_thisisalongstring");
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn long_str_slice_twice() {
-        let slice = ThinSlice::from("helloworld_thisisalongstring");
+        let slice = ByteView::from("helloworld_thisisalongstring");
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
@@ -660,7 +660,7 @@ mod tests {
 
     #[test]
     fn long_str_slice_downgrade() {
-        let slice = ThinSlice::from("helloworld_thisisalongstring");
+        let slice = ByteView::from("helloworld_thisisalongstring");
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn short_str_clone() {
-        let slice = ThinSlice::from("abcdef");
+        let slice = ByteView::from("abcdef");
         let copy = slice.clone();
         assert_eq!(slice, copy);
 
@@ -693,7 +693,7 @@ mod tests {
 
     #[test]
     fn short_str_slice_full() {
-        let slice = ThinSlice::from("abcdef");
+        let slice = ByteView::from("abcdef");
         let copy = slice.slice(..);
         assert_eq!(slice, copy);
 
@@ -707,7 +707,7 @@ mod tests {
 
     #[test]
     fn short_str_slice_part() {
-        let slice = ThinSlice::from("abcdef");
+        let slice = ByteView::from("abcdef");
         let copy = slice.slice(3..);
 
         assert_eq!(1, slice.ref_count());
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn short_str_slice_empty() {
-        let slice = ThinSlice::from("abcdef");
+        let slice = ByteView::from("abcdef");
         let copy = slice.slice(0..0);
 
         assert_eq!(1, slice.ref_count());
@@ -733,73 +733,73 @@ mod tests {
 
     #[test]
     fn tiny_str_cmp() {
-        let a = ThinSlice::from("abc");
-        let b = ThinSlice::from("def");
+        let a = ByteView::from("abc");
+        let b = ByteView::from("def");
         assert!(a < b);
     }
 
     #[test]
     fn tiny_str_eq() {
-        let a = ThinSlice::from("abc");
-        let b = ThinSlice::from("def");
+        let a = ByteView::from("abc");
+        let b = ByteView::from("def");
         assert!(a != b);
     }
 
     #[test]
     fn long_str_eq() {
-        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
-        let b = ThinSlice::from("xycdefabcdefabcdefabcdef");
+        let a = ByteView::from("abcdefabcdefabcdefabcdef");
+        let b = ByteView::from("xycdefabcdefabcdefabcdef");
         assert!(a != b);
     }
 
     #[test]
     fn long_str_cmp() {
-        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
-        let b = ThinSlice::from("xycdefabcdefabcdefabcdef");
+        let a = ByteView::from("abcdefabcdefabcdefabcdef");
+        let b = ByteView::from("xycdefabcdefabcdefabcdef");
         assert!(a < b);
     }
 
     #[test]
     fn long_str_eq_2() {
-        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
-        let b = ThinSlice::from("abcdefabcdefabcdefabcdef");
+        let a = ByteView::from("abcdefabcdefabcdefabcdef");
+        let b = ByteView::from("abcdefabcdefabcdefabcdef");
         assert!(a == b);
     }
 
     #[test]
     fn long_str_cmp_2() {
-        let a = ThinSlice::from("abcdefabcdefabcdefabcdef");
-        let b = ThinSlice::from("abcdefabcdefabcdefabcdeg");
+        let a = ByteView::from("abcdefabcdefabcdefabcdef");
+        let b = ByteView::from("abcdefabcdefabcdefabcdeg");
         assert!(a < b);
     }
 
     #[test]
     fn long_str_cmp_3() {
-        let a = ThinSlice::from("abcdefabcdefabcdefabcde");
-        let b = ThinSlice::from("abcdefabcdefabcdefabcdef");
+        let a = ByteView::from("abcdefabcdefabcdefabcde");
+        let b = ByteView::from("abcdefabcdefabcdefabcdef");
         assert!(a < b);
     }
 
     #[test]
     fn cmp_fuzz_1() {
-        let a = ThinSlice::from([0]);
-        let b = ThinSlice::from([]);
+        let a = ByteView::from([0]);
+        let b = ByteView::from([]);
 
         assert!(a > b);
     }
 
     #[test]
     fn cmp_fuzz_2() {
-        let a = ThinSlice::from([0, 0]);
-        let b = ThinSlice::from([0]);
+        let a = ByteView::from([0, 0]);
+        let b = ByteView::from([0]);
 
         assert!(a > b);
     }
 
     #[test]
     fn cmp_fuzz_3() {
-        let a = ThinSlice::from([255, 255, 12, 255, 0]);
-        let b = ThinSlice::from([255, 255, 12, 255]);
+        let a = ByteView::from([255, 255, 12, 255, 0]);
+        let b = ByteView::from([255, 255, 12, 255]);
 
         assert!(a > b);
     }

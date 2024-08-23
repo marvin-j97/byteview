@@ -1,13 +1,13 @@
 [package]
-name = "thin-slice"
-description = "Thin immutable zero-copy slice type"
+name = "byteview"
+description = "Thin, immutable zero-copy slice type"
 license = "MIT OR Apache-2.0"
-version = "0.0.1"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.74"
 readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
-repository = "https://github.com/marvin-j97/thin-slice"
+repository = "https://github.com/marvin-j97/byteview"
 categories = ["data-structures"]
 keywords = ["german string", "string view"]
 

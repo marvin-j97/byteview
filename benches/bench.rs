@@ -1,6 +1,6 @@
+use byteview::ByteView;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::time::Duration;
-use thin_slice::ThinSlice;
 
 fn cmp_short(c: &mut Criterion) {
     let mut group = c.benchmark_group("cmp short");
@@ -30,13 +30,13 @@ fn cmp_short(c: &mut Criterion) {
     {
         /*  let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!(8))
-        .map(ThinSlice::from)
+        .map(ByteView::from)
         .collect::<Vec<_>>(); */
 
-        let x = ThinSlice::from(x);
-        let y = ThinSlice::from(y);
+        let x = ByteView::from(x);
+        let y = ByteView::from(y);
 
-        group.bench_function("ThinSlice", |b| {
+        group.bench_function("ByteView", |b| {
             b.iter(|| {
                 /*    let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -80,13 +80,13 @@ fn cmp_long(c: &mut Criterion) {
     {
         /* let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!())
-        .map(ThinSlice::from)
+        .map(ByteView::from)
         .collect::<Vec<_>>(); */
 
-        let x = ThinSlice::from(x);
-        let y = ThinSlice::from(y);
+        let x = ByteView::from(x);
+        let y = ByteView::from(y);
 
-        group.bench_function("ThinSlice", |b| {
+        group.bench_function("ByteView", |b| {
             b.iter(|| {
                 /* let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -128,13 +128,13 @@ fn eq_short(c: &mut Criterion) {
     {
         /*  let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!(8))
-        .map(ThinSlice::from)
+        .map(ByteView::from)
         .collect::<Vec<_>>(); */
 
-        let x = ThinSlice::from(x);
-        let y = ThinSlice::from(y);
+        let x = ByteView::from(x);
+        let y = ByteView::from(y);
 
-        group.bench_function("ThinSlice", |b| {
+        group.bench_function("ByteView", |b| {
             b.iter(|| {
                 /*   let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -178,13 +178,13 @@ fn eq_long(c: &mut Criterion) {
     {
         /*     let strings = (0..10_000_000)
         .map(|_| nanoid::nanoid!())
-        .map(ThinSlice::from)
+        .map(ByteView::from)
         .collect::<Vec<_>>(); */
 
-        let x = ThinSlice::from(x);
-        let y = ThinSlice::from(y);
+        let x = ByteView::from(x);
+        let y = ByteView::from(y);
 
-        group.bench_function("ThinSlice", |b| {
+        group.bench_function("ByteView", |b| {
             b.iter(|| {
                 /*  let idx = rng.gen_range(0..strings.len());
                 let x = &strings[idx];
@@ -208,9 +208,9 @@ fn ctor(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("ThinSlice", |b| {
+    group.bench_function("ByteView", |b| {
         b.iter(|| {
-            let _x = ThinSlice::from(nanoid::nanoid!());
+            let _x = ByteView::from(nanoid::nanoid!());
         });
     });
 }

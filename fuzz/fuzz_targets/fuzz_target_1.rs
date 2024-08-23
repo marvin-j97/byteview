@@ -1,9 +1,9 @@
 #![no_main]
+use byteview::ByteView;
 use libfuzzer_sys::{
     arbitrary::{Arbitrary, Unstructured},
     fuzz_target,
 };
-use thin_slice::ThinSlice;
 
 fuzz_target!(|data: &[u8]| {
     let mut unstructured = Unstructured::new(data);
@@ -13,8 +13,8 @@ fuzz_target!(|data: &[u8]| {
         <Vec<u8> as Arbitrary>::arbitrary(&mut unstructured),
         <Vec<u8> as Arbitrary>::arbitrary(&mut unstructured),
     ) {
-        let a = ThinSlice::from(&*input1);
-        let b = ThinSlice::from(&*input2);
+        let a = ByteView::from(&*input1);
+        let b = ByteView::from(&*input2);
 
         eprintln!("{a:?} <=> {b:?}");
 
