@@ -283,10 +283,11 @@ impl ByteView {
         self.deref().to_vec()
     }
 
-    /// Clones the contents of this slice into an independently tracked slice.
+    // TODO: should return ByteView with its own RC
+    /*  /// Clones the contents of this slice into an independently tracked slice.
     pub fn to_owned(&self) -> Arc<[u8]> {
         self.deref().into()
-    }
+    } */
 
     /// Clones the given range of the existing slice without heap allocation.
     ///
