@@ -309,7 +309,7 @@ impl ByteView {
     /// # Examples
     ///
     /// ```
-    /// # use thin_slice::ByteView;
+    /// # use byteview::ByteView;
     /// let slice = ByteView::from("helloworld_thisisalongstring");
     /// let copy = slice.slice(11..);
     /// assert_eq!(b"thisisalongstring", &*copy);
