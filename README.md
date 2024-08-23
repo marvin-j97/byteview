@@ -11,6 +11,8 @@ An immutable byte slice that may be inlined, and can be partially cloned without
 
 ## Memory usage
 
+TODO: rerun statistics
+
 Allocating 200M "helloworld" (len=10) strings:
 
 |  Struct         | Memory Usage |

@@ -2,7 +2,7 @@
 //!
 //! ```
 //! # use byteview::ByteView;
-//! let slice = ByteView::from("helloworld_thisisalongstring");
+//! let slice = ByteView::from("helloworld_thisisaverylongstring");
 //!
 //! // No heap allocation - increases the ref count like an Arc<[u8]>
 //! let full_copy = slice.clone();
@@ -10,7 +10,7 @@
 //!
 //! // No heap allocation - increases the ref count like an Arc<[u8]>, but we only get a subslice
 //! let copy = slice.slice(11..);
-//! assert_eq!(b"thisisalongstring", &*copy);
+//! assert_eq!(b"thisisaverylongstring", &*copy);
 //!
 //! // No heap allocation - if the slice is small enough, it will be inlined into the struct...
 //! let copycopy = copy.slice(0..4);
@@ -35,7 +35,7 @@ use std::{
     sync::{atomic::AtomicU64, atomic::Ordering},
 };
 
-const INLINE_SIZE: usize = 12;
+const INLINE_SIZE: usize = 20;
 const PREFIX_SIZE: usize = 4;
 
 #[repr(C)]
@@ -48,7 +48,7 @@ struct HeapAllocationHeader {
 /// An immutable byte slice
 ///
 /// Will be inlined (no pointer dereference or heap allocation)
-/// if it is 12 characters or shorter.
+/// if it is 20 characters or shorter.
 ///
 /// A single heap allocation will be shared between multiple slices.
 /// Even subslices of that heap allocation can be cloned without additional heap allocation.
@@ -211,8 +211,8 @@ impl ByteView {
 
         if str.is_inline() {
             unsafe {
-                // SAFETY: We check for 12 or less characters
-                // which fits into our 12x U8 buffer
+                // SAFETY: We check for inlinability
+                // so we know the the input slice fits our buffer
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), str.prefix.as_mut_ptr(), slice_len)
             }
         } else {
@@ -405,14 +405,20 @@ impl ByteView {
     }
 
     fn get_short_slice(&self, len: usize) -> &[u8] {
-        debug_assert!(len <= 12, "cannot get short slice - slice is not inlined");
+        debug_assert!(
+            len <= INLINE_SIZE,
+            "cannot get short slice - slice is not inlined"
+        );
 
         // SAFETY: Shall only be called if slice is inlined
         unsafe { std::slice::from_raw_parts(self.prefix.as_ptr(), len) }
     }
 
     fn get_long_slice(&self, len: usize) -> &[u8] {
-        debug_assert!(len >= 12, "cannot get long slice - slice is inlined");
+        debug_assert!(
+            len > INLINE_SIZE,
+            "cannot get long slice - slice is inlined"
+        );
 
         // SAFETY: Shall only be called if slice is heap allocated
         unsafe { std::slice::from_raw_parts(self.data, len) }
@@ -547,6 +553,7 @@ mod tests {
         assert_eq!(0, slice.len());
         assert_eq!(&*slice, b"");
         assert_eq!(1, slice.ref_count());
+        assert!(slice.is_inline());
     }
 
     #[test]
@@ -555,6 +562,7 @@ mod tests {
         assert_eq!(0, slice.len());
         assert_eq!(&*slice, b"");
         assert_eq!(1, slice.ref_count());
+        assert!(slice.is_inline());
     }
 
     #[test]
@@ -564,6 +572,7 @@ mod tests {
         assert_eq!(&*slice, b"abcdef");
         assert_eq!(1, slice.ref_count());
         assert_eq!(&slice.prefix, b"abcd");
+        assert!(slice.is_inline());
     }
 
     #[test]
@@ -573,20 +582,45 @@ mod tests {
         assert_eq!(&*slice, b"abcdefabcdef");
         assert_eq!(1, slice.ref_count());
         assert_eq!(&slice.prefix, b"abcd");
+        assert!(slice.is_inline());
+    }
+
+    #[test]
+    fn medium_long_str() {
+        let slice = ByteView::from("abcdefabcdefabcdabcd");
+        assert_eq!(20, slice.len());
+        assert_eq!(&*slice, b"abcdefabcdefabcdabcd");
+        assert_eq!(1, slice.ref_count());
+        assert_eq!(&slice.prefix, b"abcd");
+        assert!(slice.is_inline());
+    }
+
+    #[test]
+    fn medium_str_clone() {
+        let slice = ByteView::from("abcdefabcdefabcdefab");
+        let copy = slice.clone();
+        assert_eq!(slice, copy);
+        assert_eq!(copy.prefix, slice.prefix);
+
+        assert_eq!(1, slice.ref_count());
+
+        drop(copy);
+        assert_eq!(1, slice.ref_count());
     }
 
     #[test]
     fn long_str() {
-        let slice = ByteView::from("abcdefabcdefabcdefab");
-        assert_eq!(20, slice.len());
-        assert_eq!(&*slice, b"abcdefabcdefabcdefab");
+        let slice = ByteView::from("abcdefabcdefabcdefababcd");
+        assert_eq!(24, slice.len());
+        assert_eq!(&*slice, b"abcdefabcdefabcdefababcd");
         assert_eq!(1, slice.ref_count());
         assert_eq!(&slice.prefix, b"abcd");
+        assert!(!slice.is_inline());
     }
 
     #[test]
     fn long_str_clone() {
-        let slice = ByteView::from("abcdefabcdefabcdefab");
+        let slice = ByteView::from("abcdefabcdefabcdefababcd");
         let copy = slice.clone();
         assert_eq!(slice, copy);
         assert_eq!(copy.prefix, slice.prefix);
@@ -618,7 +652,7 @@ mod tests {
         assert_eq!(b"thisisalongstring", &*copy);
         assert_eq!(&copy.prefix, b"this");
 
-        assert_eq!(2, slice.ref_count());
+        assert_eq!(1, slice.ref_count());
 
         drop(copy);
         assert_eq!(1, slice.ref_count());
@@ -634,10 +668,10 @@ mod tests {
         let copycopy = copy.slice(..);
         assert_eq!(copy, copycopy);
 
-        assert_eq!(3, slice.ref_count());
+        assert_eq!(1, slice.ref_count());
 
         drop(copy);
-        assert_eq!(2, slice.ref_count());
+        assert_eq!(1, slice.ref_count());
 
         drop(slice);
         assert_eq!(1, copycopy.ref_count());
@@ -653,7 +687,7 @@ mod tests {
         let copycopy = copy.slice(0..4);
         assert_eq!(b"this", &*copycopy);
 
-        assert_eq!(2, slice.ref_count());
+        assert_eq!(1, slice.ref_count());
 
         drop(copy);
         assert_eq!(1, slice.ref_count());
