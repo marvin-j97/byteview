@@ -7,7 +7,6 @@ edition = "2021"
 rust-version = "1.74"
 readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
-homepage = "https://github.com/marvin-j97/thin-slice"
 repository = "https://github.com/marvin-j97/thin-slice"
 categories = ["data-structures"]
 keywords = ["german string", "string view"]
