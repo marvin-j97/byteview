@@ -581,6 +581,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn medium_str() {
         let slice = ByteView::from("abcdefabcdef");
         assert_eq!(12, slice.len());
@@ -591,6 +592,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn medium_long_str() {
         let slice = ByteView::from("abcdefabcdefabcdabcd");
         assert_eq!(20, slice.len());
@@ -601,6 +603,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn medium_str_clone() {
         let slice = ByteView::from("abcdefabcdefabcdefab");
         let copy = slice.clone();
