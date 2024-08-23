@@ -126,32 +126,30 @@ impl std::cmp::PartialEq for ByteView {
             }
         }
 
+        let len = self.len as usize;
+
         // NOTE: At this point we know
         // both strings must have the same prefix and same length
         //
         // If we are inlined, the other string must be inlined too,
         // so checking the prefix is enough
         if self.is_inline() {
-            return self.rest == other.rest;
+            return self.get_short_slice(len) == other.get_short_slice(len);
         }
 
-        let len = self.len as usize;
         self.get_long_slice(len) == other.get_long_slice(len)
     }
 }
 
 impl std::cmp::Ord for ByteView {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering::Equal;
-
         self.prefix.cmp(&other.prefix).then_with(|| {
             if self.len <= 4 && other.len <= 4 {
                 self.len.cmp(&other.len)
             } else if self.is_inline() && other.is_inline() {
-                match self.rest.cmp(&other.rest) {
-                    Equal => self.len.cmp(&other.len),
-                    x => x,
-                }
+                let a = self.get_short_slice(self.len as usize);
+                let b = other.get_short_slice(other.len as usize);
+                a.cmp(b)
             } else {
                 self.deref().cmp(other.deref())
             }
@@ -816,6 +814,7 @@ mod tests {
         let b = ByteView::from([]);
 
         assert!(a > b);
+        assert!(a != b);
     }
 
     #[test]
@@ -824,6 +823,7 @@ mod tests {
         let b = ByteView::from([0]);
 
         assert!(a > b);
+        assert!(a != b);
     }
 
     #[test]
@@ -832,5 +832,19 @@ mod tests {
         let b = ByteView::from([255, 255, 12, 255]);
 
         assert!(a > b);
+        assert!(a != b);
+    }
+
+    #[test]
+    fn cmp_fuzz_4() {
+        let a = ByteView::from([
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ]);
+        let b = ByteView::from([
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0,
+        ]);
+
+        assert!(a > b);
+        assert!(a != b);
     }
 }
