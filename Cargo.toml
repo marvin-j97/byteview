@@ -1,13 +1,25 @@
 [package]
 name = "thin-slice"
 description = "Thin immutable zero-copy slice type"
+license = "MIT OR Apache-2.0"
 version = "0.0.1"
 edition = "2021"
 rust-version = "1.74"
 readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
+homepage = "https://github.com/marvin-j97/thin-slice"
+repository = "https://github.com/marvin-j97/thin-slice"
+categories = ["data-structures"]
+keywords = ["german string", "string view"]
 
 [lib]
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1.0.208", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

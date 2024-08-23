@@ -36,6 +36,7 @@ use std::{
 };
 
 const INLINE_SIZE: usize = 12;
+const PREFIX_SIZE: usize = 4;
 
 #[repr(C)]
 struct HeapAllocationHeader {
@@ -62,8 +63,20 @@ struct HeapAllocationHeader {
 #[repr(C)]
 pub struct ThinSlice {
     len: u32,
-    rest: [u8; INLINE_SIZE],
+    prefix: [u8; PREFIX_SIZE],
+    rest: [u8; 8],
     data: *const u8,
+}
+
+impl Default for ThinSlice {
+    fn default() -> Self {
+        Self {
+            len: 0,
+            prefix: [0; 4],
+            rest: [0; 8],
+            data: std::ptr::null(),
+        }
+    }
 }
 
 impl Clone for ThinSlice {
@@ -74,17 +87,20 @@ impl Clone for ThinSlice {
 
 impl Drop for ThinSlice {
     fn drop(&mut self) {
-        if !self.is_inline() {
-            let heap_region = self.get_heap_region();
-            let rc_before = heap_region.ref_count.fetch_sub(1, Ordering::AcqRel);
+        if self.is_inline() {
+            return;
+        }
 
-            if rc_before == 1 {
-                unsafe {
-                    // The RC is now 0, so free heap allocation
-                    let ptr = heap_region as *const HeapAllocationHeader as *mut u8;
-                    drop(Box::from_raw(ptr));
-                }
-            }
+        let heap_region = self.get_heap_region();
+
+        if heap_region.ref_count.fetch_sub(1, Ordering::AcqRel) != 1 {
+            return;
+        }
+
+        unsafe {
+            // The RC is now 0, so free heap allocation
+            let ptr = heap_region as *const HeapAllocationHeader as *mut u8;
+            drop(Box::from_raw(ptr));
         }
     }
 }
@@ -108,67 +124,28 @@ impl std::cmp::PartialEq for ThinSlice {
         // NOTE: At this point we know
         // both strings must have the same prefix and same length
         //
-        // If we are inlined, the other string must be inlined too
-        // So checking the prefix is enough
+        // If we are inlined, the other string must be inlined too,
+        // so checking the prefix is enough
         if self.is_inline() {
-            unsafe {
-                let a = *(self.rest.as_ptr() as *const u32);
-                let b = *(other.rest.as_ptr() as *const u32);
-
-                return a == b;
-            }
+            return self.rest == other.rest;
         }
 
-        let len = (self.len as usize) - 4;
-
-        unsafe {
-            // SAFETY: We cannot reach this branch if we are inlined
-            // so self.data must be defined
-            let a = std::slice::from_raw_parts(self.data.add(4), len);
-            let b = std::slice::from_raw_parts(other.data.add(4), len);
-
-            a == b
-        }
+        let len = self.len as usize;
+        self.get_long_slice(len) == other.get_long_slice(len)
     }
 }
 
 impl std::cmp::Ord for ThinSlice {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.is_inline() && other.is_inline() {
-            return self.rest.cmp(&other.rest);
-        }
-
-        match self.rest[0..4].cmp(&other.rest[0..4]) {
-            std::cmp::Ordering::Equal => {}
-            x => return x,
-        }
-
-        unsafe {
-            let b = std::slice::from_raw_parts(other.data, other.len as usize);
-
-            match self.rest[0..4].cmp(b) {
-                std::cmp::Ordering::Equal => {}
-                x => return x,
+        self.prefix.cmp(&other.prefix).then_with(|| {
+            if self.len <= 4 && other.len <= 4 {
+                std::cmp::Ordering::Equal
+            } else if self.is_inline() && other.is_inline() {
+                self.rest.cmp(&other.rest)
+            } else {
+                self.deref().cmp(other.deref())
             }
-        }
-
-        debug_assert!(!self.data.is_null(), "data is null");
-
-        unsafe {
-            let a = std::slice::from_raw_parts(self.data, self.len as usize);
-
-            match other.rest[0..4].cmp(a) {
-                std::cmp::Ordering::Equal => {}
-                x => return x,
-            }
-        }
-
-        unsafe {
-            let a = std::slice::from_raw_parts(self.data.add(4), (self.len as usize) - 4);
-            let b = std::slice::from_raw_parts(other.data.add(4), (other.len as usize) - 4);
-
-            a.cmp(b)
-        }
+        })
     }
 }
 
@@ -223,23 +200,30 @@ impl ThinSlice {
         let mut str = Self {
             len,
             data: std::ptr::null(),
-            rest: [0; INLINE_SIZE],
+            prefix: [0; PREFIX_SIZE],
+            rest: [0; 8],
         };
 
         if str.is_inline() {
             unsafe {
                 // SAFETY: We check for 12 or less characters
                 // which fits into our 12x U8 buffer
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.rest.as_mut_ptr(), slice_len)
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.prefix.as_mut_ptr(), slice_len)
             }
         } else {
+            str.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
+
             unsafe {
-                // SAFETY: We store the first 4 characters in the buffer
+                /*  // SAFETY: We store the first 4 characters in the buffer
                 // we know the incoming slice is more than 4 characters
                 // because we are in the >12 branch
                 //
                 // The remaining 8 bytes are the heap allocation pointer
-                std::ptr::copy_nonoverlapping(slice[0..4].as_ptr(), str.rest.as_mut_ptr(), 4);
+                std::ptr::copy_nonoverlapping(
+                    slice[0..PREFIX_SIZE].as_ptr(),
+                    str.rest.as_mut_ptr(),
+                    4,
+                ); */
 
                 // Heap allocation, with exactly enough bytes for the header + slice length
                 let layout = std::alloc::Layout::array::<u8>(
@@ -249,8 +233,8 @@ impl ThinSlice {
 
                 let heap_ptr = std::alloc::alloc(layout);
 
-                // SAFETY: Copy prefix, we have space for 4 characters
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.rest.as_mut_ptr(), 4);
+                /*  // SAFETY: Copy prefix, we have space for 4 characters
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.prefix.as_mut_ptr(), 4); */
 
                 // SAFETY: We store a pointer to the copied slice, which comes directly after the header
                 str.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
@@ -260,15 +244,19 @@ impl ThinSlice {
 
                 // Set pointer in "rest" to heap allocation address
                 let ptr = heap_ptr as u64;
-
                 let ptr_bytes = ptr.to_le_bytes();
-                std::ptr::copy_nonoverlapping(ptr_bytes.as_ptr(), str.rest.as_mut_ptr().add(4), 8);
+                str.rest = ptr_bytes;
+                //std::ptr::copy_nonoverlapping(ptr_bytes.as_ptr(), str.rest.as_mut_ptr(), 8);
 
                 // Set ref_count to 1
                 let ref_count = heap_ptr as *mut u64;
                 *ref_count = 1;
             }
         }
+
+        debug_assert_eq!(slice, &*str);
+        debug_assert_eq!(1, str.ref_count());
+        debug_assert_eq!(str.len, slice.len() as u32);
 
         str
     }
@@ -282,8 +270,8 @@ impl ThinSlice {
         unsafe {
             // SAFETY: Shall only be used when the slice is not inlined
             // otherwise the heap pointer would be garbage
-            let ptr_bytes = std::slice::from_raw_parts(self.rest.as_ptr().add(4), 8);
-            let ptr = u64::from_le_bytes(ptr_bytes.try_into().unwrap());
+            //  let ptr_bytes = std::slice::from_raw_parts(self.rest.as_ptr(), 8);
+            let ptr = u64::from_le_bytes(self.rest);
             let ptr = ptr as *const u8;
 
             let heap_alloc_region: *const HeapAllocationHeader = ptr as *const HeapAllocationHeader;
@@ -360,59 +348,57 @@ impl ThinSlice {
         // so we just need to memcpy the struct, and replace
         // the inline slice with the requested range
         if new_len <= INLINE_SIZE && self_len <= INLINE_SIZE {
-            let mut buf = self.rest;
-
-            unsafe {
-                // Replace with requested range
-                std::ptr::copy_nonoverlapping(
-                    self.rest[begin..end].as_ptr(),
-                    buf.as_mut_ptr(),
-                    new_len,
-                );
-            }
-
-            Self {
+            let mut cloned = Self {
                 len: u32::try_from(new_len).unwrap(),
                 data: std::ptr::null(),
-                rest: buf,
+                prefix: [0; PREFIX_SIZE],
+                rest: [0; 8],
+            };
+
+            let slice = &self.get_short_slice(self.len())[begin..end];
+            debug_assert_eq!(slice.len(), new_len);
+
+            unsafe {
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), cloned.prefix.as_mut_ptr(), new_len);
             }
+
+            cloned
         } else if new_len <= INLINE_SIZE && self_len > INLINE_SIZE {
-            let mut buf = [0_u8; INLINE_SIZE];
-
-            unsafe {
-                // SAFETY: We checked for the new length being <= 12 above
-                // so it fits inside the inline buffer
-                std::ptr::copy_nonoverlapping(self.data, buf.as_mut_ptr(), new_len);
-            }
-
-            Self {
+            let mut cloned = Self {
                 len: u32::try_from(new_len).unwrap(),
                 data: std::ptr::null(),
-                rest: buf,
+                prefix: [0; PREFIX_SIZE],
+                rest: [0; 8],
+            };
+
+            let slice = &self.get_long_slice(self.len())[begin..end];
+            debug_assert_eq!(slice.len(), new_len);
+
+            unsafe {
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), cloned.prefix.as_mut_ptr(), new_len);
             }
+
+            cloned
         } else if new_len > INLINE_SIZE && self_len > INLINE_SIZE {
-            let mut buf = self.rest;
-
             let heap_region = self.get_heap_region();
-
             let rc_before = heap_region.ref_count.fetch_add(1, Ordering::Release);
-
             debug_assert!(rc_before < u64::MAX, "refcount overflow");
 
-            // Set new prefix
-            unsafe {
-                // SAFETY: Copy prefix, we have space for 4 characters
-                std::ptr::copy_nonoverlapping(self.rest.as_ptr(), buf.as_mut_ptr(), 4);
-            }
-
-            Self {
+            let mut cloned = Self {
                 len: u32::try_from(new_len).unwrap(),
                 // SAFETY: self.data must be defined
                 // we cannot get a range larger than our own slice
                 // so we cannot be inlined while the requested slice is not inlinable
                 data: unsafe { self.data.add(begin) },
-                rest: buf,
-            }
+                prefix: [0; PREFIX_SIZE],
+                rest: self.rest,
+            };
+
+            let prefix = &self.get_long_slice(self.len())[begin..(begin + 4)];
+            debug_assert_eq!(prefix.len(), 4);
+            cloned.prefix.copy_from_slice(prefix);
+
+            cloned
         } else {
             unreachable!()
         }
@@ -432,7 +418,7 @@ impl ThinSlice {
         debug_assert!(len <= 12, "cannot get short slice - slice is not inlined");
 
         // SAFETY: Shall only be called if slice is inlined
-        unsafe { std::slice::from_raw_parts(self.rest.as_ptr(), len) }
+        unsafe { std::slice::from_raw_parts(self.prefix.as_ptr(), len) }
     }
 
     fn get_long_slice(&self, len: usize) -> &[u8] {
@@ -500,6 +486,50 @@ impl<const N: usize> From<[u8; N]> for ThinSlice {
     }
 }
 
+#[cfg(feature = "serde")]
+mod serde {
+    use super::ThinSlice;
+    use serde::de::{self, Visitor};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::fmt;
+    use std::ops::Deref;
+
+    impl Serialize for ThinSlice {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_bytes(self.deref())
+        }
+    }
+
+    impl<'de> Deserialize<'de> for ThinSlice {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct ThinSliceVisitor;
+
+            impl<'de> Visitor<'de> for ThinSliceVisitor {
+                type Value = ThinSlice;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("a byte array")
+                }
+
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<ThinSlice, E>
+                where
+                    E: de::Error,
+                {
+                    Ok(ThinSlice::from(v))
+                }
+            }
+
+            deserializer.deserialize_bytes(ThinSliceVisitor)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{HeapAllocationHeader, ThinSlice};
@@ -530,11 +560,20 @@ mod tests {
     }
 
     #[test]
+    fn default_str() {
+        let slice = ThinSlice::default();
+        assert_eq!(0, slice.len());
+        assert_eq!(&*slice, b"");
+        assert_eq!(1, slice.ref_count());
+    }
+
+    #[test]
     fn short_str() {
         let slice = ThinSlice::from("abcdef");
         assert_eq!(6, slice.len());
         assert_eq!(&*slice, b"abcdef");
         assert_eq!(1, slice.ref_count());
+        assert_eq!(&slice.prefix, b"abcd");
     }
 
     #[test]
@@ -543,6 +582,7 @@ mod tests {
         assert_eq!(12, slice.len());
         assert_eq!(&*slice, b"abcdefabcdef");
         assert_eq!(1, slice.ref_count());
+        assert_eq!(&slice.prefix, b"abcd");
     }
 
     #[test]
@@ -551,6 +591,7 @@ mod tests {
         assert_eq!(20, slice.len());
         assert_eq!(&*slice, b"abcdefabcdefabcdefab");
         assert_eq!(1, slice.ref_count());
+        assert_eq!(&slice.prefix, b"abcd");
     }
 
     #[test]
@@ -558,6 +599,20 @@ mod tests {
         let slice = ThinSlice::from("abcdefabcdefabcdefab");
         let copy = slice.clone();
         assert_eq!(slice, copy);
+        assert_eq!(copy.prefix, slice.prefix);
+
+        assert_eq!(2, slice.ref_count());
+
+        drop(copy);
+        assert_eq!(1, slice.ref_count());
+    }
+
+    #[test]
+    fn long_str_slice_full() {
+        let slice = ThinSlice::from("helloworld_thisisalongstring");
+
+        let copy = slice.slice(..);
+        assert_eq!(copy, slice);
 
         assert_eq!(2, slice.ref_count());
 
@@ -571,6 +626,7 @@ mod tests {
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
+        assert_eq!(&copy.prefix, b"this");
 
         assert_eq!(2, slice.ref_count());
 
