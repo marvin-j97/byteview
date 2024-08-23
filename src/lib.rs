@@ -35,7 +35,12 @@ use std::{
     sync::{atomic::AtomicU64, atomic::Ordering},
 };
 
+#[cfg(target_pointer_width = "64")]
 const INLINE_SIZE: usize = 20;
+
+#[cfg(target_pointer_width = "32")]
+const INLINE_SIZE: usize = 16;
+
 const PREFIX_SIZE: usize = 4;
 
 #[repr(C)]
@@ -48,7 +53,7 @@ struct HeapAllocationHeader {
 /// An immutable byte slice
 ///
 /// Will be inlined (no pointer dereference or heap allocation)
-/// if it is 20 characters or shorter.
+/// if it is 20 characters or shorter (on a 64-bit system).
 ///
 /// A single heap allocation will be shared between multiple slices.
 /// Even subslices of that heap allocation can be cloned without additional heap allocation.
