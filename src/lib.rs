@@ -103,9 +103,13 @@ impl Drop for ByteView {
         }
 
         unsafe {
-            // The RC is now 0, so free heap allocation
-            let ptr = heap_region as *const HeapAllocationHeader as *mut u8;
-            drop(Box::from_raw(ptr));
+            let header_size = std::mem::size_of::<HeapAllocationHeader>();
+            let alignment = std::mem::align_of::<HeapAllocationHeader>();
+            let total_size = header_size + self.len as usize;
+            let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
+
+            let ptr = u64::from_le_bytes(self.rest) as *mut u8;
+            std::alloc::dealloc(ptr, layout);
         }
     }
 }
@@ -213,22 +217,26 @@ impl ByteView {
         };
 
         if str.is_inline() {
+            // SAFETY: We check for inlinability
+            // so we know the the input slice fits our buffer
             unsafe {
-                // SAFETY: We check for inlinability
-                // so we know the the input slice fits our buffer
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.prefix.as_mut_ptr(), slice_len);
+                let base_ptr = &mut str as *mut ByteView as *mut u8;
+                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, slice_len);
             }
         } else {
             str.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
 
             unsafe {
-                // Heap allocation, with exactly enough bytes for the header + slice length
-                let layout = std::alloc::Layout::array::<u8>(
-                    std::mem::size_of::<HeapAllocationHeader>() + slice_len,
-                )
-                .unwrap();
+                let header_size = std::mem::size_of::<HeapAllocationHeader>();
+                let alignment = std::mem::align_of::<HeapAllocationHeader>();
+                let total_size = header_size + slice_len;
+                let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
 
                 let heap_ptr = std::alloc::alloc(layout);
+                if heap_ptr.is_null() {
+                    std::alloc::handle_alloc_error(layout);
+                }
 
                 // SAFETY: We store a pointer to the copied slice, which comes directly after the header
                 str.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
@@ -236,14 +244,17 @@ impl ByteView {
                 // Copy byte slice into heap allocation
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), str.data as *mut u8, slice_len);
 
-                // Set pointer in "rest" to heap allocation address
-                let ptr = heap_ptr as u64;
-                let ptr_bytes = ptr.to_le_bytes();
-                str.rest = ptr_bytes;
+                {
+                    // Set pointer in "rest" to heap allocation address
+                    let ptr = heap_ptr as u64;
+                    let ptr_bytes = ptr.to_le_bytes();
+                    str.rest = ptr_bytes;
+                }
 
-                // Set ref_count to 1
-                let ref_count = heap_ptr as *mut u64;
-                *ref_count = 1;
+                // Set ref count
+                let heap_region = heap_ptr as *const HeapAllocationHeader;
+                let heap_region = &*heap_region;
+                heap_region.ref_count.store(1, Ordering::Release);
             }
         }
 
@@ -266,8 +277,8 @@ impl ByteView {
             let ptr = u64::from_le_bytes(self.rest);
             let ptr = ptr as *const u8;
 
-            let heap_alloc_region: *const HeapAllocationHeader = ptr as *const HeapAllocationHeader;
-            &*heap_alloc_region
+            let heap_region: *const HeapAllocationHeader = ptr as *const HeapAllocationHeader;
+            &*heap_region
         }
     }
 
@@ -352,7 +363,9 @@ impl ByteView {
             debug_assert_eq!(slice.len(), new_len);
 
             unsafe {
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), cloned.prefix.as_mut_ptr(), new_len);
+                let base_ptr = &mut cloned as *mut ByteView as *mut u8;
+                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, new_len);
             }
 
             cloned
@@ -368,7 +381,9 @@ impl ByteView {
             debug_assert_eq!(slice.len(), new_len);
 
             unsafe {
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), cloned.prefix.as_mut_ptr(), new_len);
+                let base_ptr = &mut cloned as *mut ByteView as *mut u8;
+                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, new_len);
             }
 
             cloned
@@ -414,7 +429,11 @@ impl ByteView {
         );
 
         // SAFETY: Shall only be called if slice is inlined
-        unsafe { std::slice::from_raw_parts(self.prefix.as_ptr(), len) }
+        unsafe {
+            let base_ptr = self as *const ByteView as *const u8;
+            let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
+            std::slice::from_raw_parts(prefix_offset, len)
+        }
     }
 
     fn get_long_slice(&self, len: usize) -> &[u8] {
