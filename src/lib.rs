@@ -219,17 +219,6 @@ impl ByteView {
             str.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
 
             unsafe {
-                /*  // SAFETY: We store the first 4 characters in the buffer
-                // we know the incoming slice is more than 4 characters
-                // because we are in the >12 branch
-                //
-                // The remaining 8 bytes are the heap allocation pointer
-                std::ptr::copy_nonoverlapping(
-                    slice[0..PREFIX_SIZE].as_ptr(),
-                    str.rest.as_mut_ptr(),
-                    4,
-                ); */
-
                 // Heap allocation, with exactly enough bytes for the header + slice length
                 let layout = std::alloc::Layout::array::<u8>(
                     std::mem::size_of::<HeapAllocationHeader>() + slice_len,
@@ -237,9 +226,6 @@ impl ByteView {
                 .unwrap();
 
                 let heap_ptr = std::alloc::alloc(layout);
-
-                /*  // SAFETY: Copy prefix, we have space for 4 characters
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.prefix.as_mut_ptr(), 4); */
 
                 // SAFETY: We store a pointer to the copied slice, which comes directly after the header
                 str.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
@@ -251,7 +237,6 @@ impl ByteView {
                 let ptr = heap_ptr as u64;
                 let ptr_bytes = ptr.to_le_bytes();
                 str.rest = ptr_bytes;
-                //std::ptr::copy_nonoverlapping(ptr_bytes.as_ptr(), str.rest.as_mut_ptr(), 8);
 
                 // Set ref_count to 1
                 let ref_count = heap_ptr as *mut u64;
@@ -275,7 +260,6 @@ impl ByteView {
         unsafe {
             // SAFETY: Shall only be used when the slice is not inlined
             // otherwise the heap pointer would be garbage
-            //  let ptr_bytes = std::slice::from_raw_parts(self.rest.as_ptr(), 8);
             let ptr = u64::from_le_bytes(self.rest);
             let ptr = ptr as *const u8;
 
