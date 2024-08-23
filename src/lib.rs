@@ -653,6 +653,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn long_str_slice() {
         let slice = ByteView::from("helloworld_thisisalongstring");
 
@@ -667,6 +668,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn long_str_slice_twice() {
         let slice = ByteView::from("helloworld_thisisalongstring");
 
@@ -686,6 +688,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn long_str_slice_downgrade() {
         let slice = ByteView::from("helloworld_thisisalongstring");
 
