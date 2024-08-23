@@ -207,16 +207,16 @@ impl ByteView {
 
         let mut str = Self {
             len,
-            data: std::ptr::null(),
             prefix: [0; PREFIX_SIZE],
             rest: [0; 8],
+            data: std::ptr::null(),
         };
 
         if str.is_inline() {
             unsafe {
                 // SAFETY: We check for inlinability
                 // so we know the the input slice fits our buffer
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.prefix.as_mut_ptr(), slice_len)
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.prefix.as_mut_ptr(), slice_len);
             }
         } else {
             str.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
