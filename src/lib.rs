@@ -137,11 +137,16 @@ impl std::cmp::PartialEq for ThinSlice {
 
 impl std::cmp::Ord for ThinSlice {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering::Equal;
+
         self.prefix.cmp(&other.prefix).then_with(|| {
             if self.len <= 4 && other.len <= 4 {
-                std::cmp::Ordering::Equal
+                self.len.cmp(&other.len)
             } else if self.is_inline() && other.is_inline() {
-                self.rest.cmp(&other.rest)
+                match self.rest.cmp(&other.rest) {
+                    Equal => self.len.cmp(&other.len),
+                    x => x,
+                }
             } else {
                 self.deref().cmp(other.deref())
             }
@@ -773,5 +778,29 @@ mod tests {
         let a = ThinSlice::from("abcdefabcdefabcdefabcde");
         let b = ThinSlice::from("abcdefabcdefabcdefabcdef");
         assert!(a < b);
+    }
+
+    #[test]
+    fn cmp_fuzz_1() {
+        let a = ThinSlice::from([0]);
+        let b = ThinSlice::from([]);
+
+        assert!(a > b);
+    }
+
+    #[test]
+    fn cmp_fuzz_2() {
+        let a = ThinSlice::from([0, 0]);
+        let b = ThinSlice::from([0]);
+
+        assert!(a > b);
+    }
+
+    #[test]
+    fn cmp_fuzz_3() {
+        let a = ThinSlice::from([255, 255, 12, 255, 0]);
+        let b = ThinSlice::from([255, 255, 12, 255]);
+
+        assert!(a > b);
     }
 }
