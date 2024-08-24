@@ -28,7 +28,7 @@ Allocating 100M "helloworldhelloworld" (len=20) strings:
 | `tokio::Bytes`  | 6.4 GB       |
 | `ByteView`     | 2.4 GB       |
 
-Allocating 500k `"helloworld".repeat(1000)` (len=1000) strings:
+Allocating 500k `"helloworld".repeat(1000)` (len=10'000) strings:
 
 |  Struct         | Memory Usage |
 |-----------------|--------------|
