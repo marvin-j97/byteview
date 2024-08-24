@@ -298,7 +298,7 @@ impl ByteView {
     }
 
     /// Clones the contents of this slice into an independently tracked slice.
-    pub fn to_owned(&self) -> Self {
+    pub fn to_detached(&self) -> Self {
         Self::from(self.deref())
     }
 
