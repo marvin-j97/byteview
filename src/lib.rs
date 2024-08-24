@@ -108,7 +108,7 @@ impl Drop for ByteView {
             let total_size = header_size + self.len as usize;
             let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
 
-            let ptr = u64::from_le_bytes(self.rest) as *mut u8;
+            let ptr = u64::from_ne_bytes(self.rest) as *mut u8;
             std::alloc::dealloc(ptr, layout);
         }
     }
@@ -247,7 +247,7 @@ impl ByteView {
                 {
                     // Set pointer in "rest" to heap allocation address
                     let ptr = heap_ptr as u64;
-                    let ptr_bytes = ptr.to_le_bytes();
+                    let ptr_bytes = ptr.to_ne_bytes();
                     str.rest = ptr_bytes;
                 }
 
@@ -274,7 +274,7 @@ impl ByteView {
         unsafe {
             // SAFETY: Shall only be used when the slice is not inlined
             // otherwise the heap pointer would be garbage
-            let ptr = u64::from_le_bytes(self.rest);
+            let ptr = u64::from_ne_bytes(self.rest);
             let ptr = ptr as *const u8;
 
             let heap_region: *const HeapAllocationHeader = ptr as *const HeapAllocationHeader;
