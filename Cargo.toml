@@ -9,7 +9,7 @@ readme = "README.md"
 include = ["src/**/*", "LICENSE-APACHE", "LICENSE-MIT", "README.md"]
 repository = "https://github.com/marvin-j97/byteview"
 categories = ["data-structures"]
-keywords = ["german string", "string view"]
+keywords = ["german-string", "string-view", "byte-slice"]
 
 [lib]
 
