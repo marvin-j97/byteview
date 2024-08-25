@@ -19,6 +19,14 @@ fuzz_target!(|data: &[u8]| {
         eprintln!("{a:?} <=> {b:?}");
 
         assert_eq!(input1 == input2, a == b);
-        assert_eq!(input1 > input2, a > b);
+        assert_eq!(input1.cmp(&input2), a.cmp(&b));
+        assert_eq!(input1.len(), a.len());
+        assert_eq!(input2.len(), b.len());
+
+        let a_c = a.clone();
+        assert_eq!(a, a_c);
+
+        let b_c = b.clone();
+        assert_eq!(b, b_c);
     }
 });
