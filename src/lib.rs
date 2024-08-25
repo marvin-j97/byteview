@@ -1,4 +1,10 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 //! An immutable byte slice that may be inlined, and can be partially cloned without heap allocation.
+//!
+//! The length is limited to 2^32 bytes (4 GiB).
 //!
 //! ```
 //! # use byteview::ByteView;
@@ -202,6 +208,10 @@ impl ByteView {
     /// Creates a new slice from an existing byte slice.
     ///
     /// Will heap-allocate the slice if it has at least length 13.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length does not fit in a u32 (4 GiB).
     pub fn new(slice: &[u8]) -> Self {
         let slice_len = slice.len();
 
@@ -209,23 +219,23 @@ impl ByteView {
             panic!("byte slice too long");
         };
 
-        let mut str = Self {
+        let mut builder = Self {
             len,
             prefix: [0; PREFIX_SIZE],
             rest: [0; 8],
             data: std::ptr::null(),
         };
 
-        if str.is_inline() {
+        if builder.is_inline() {
             // SAFETY: We check for inlinability
             // so we know the the input slice fits our buffer
             unsafe {
-                let base_ptr = &mut str as *mut ByteView as *mut u8;
+                let base_ptr = &mut builder as *mut ByteView as *mut u8;
                 let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, slice_len);
             }
         } else {
-            str.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
+            builder.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
 
             unsafe {
                 let header_size = std::mem::size_of::<HeapAllocationHeader>();
@@ -239,16 +249,16 @@ impl ByteView {
                 }
 
                 // SAFETY: We store a pointer to the copied slice, which comes directly after the header
-                str.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
+                builder.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
 
                 // Copy byte slice into heap allocation
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), str.data as *mut u8, slice_len);
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), builder.data as *mut u8, slice_len);
 
                 {
                     // Set pointer in "rest" to heap allocation address
                     let ptr = heap_ptr as u64;
                     let ptr_bytes = ptr.to_ne_bytes();
-                    str.rest = ptr_bytes;
+                    builder.rest = ptr_bytes;
                 }
 
                 // Set ref count
@@ -258,11 +268,11 @@ impl ByteView {
             }
         }
 
-        debug_assert_eq!(slice, &*str);
-        debug_assert_eq!(1, str.ref_count());
-        debug_assert_eq!(str.len, slice.len() as u32);
+        debug_assert_eq!(slice, &*builder);
+        debug_assert_eq!(1, builder.ref_count());
+        debug_assert_eq!(builder.len, slice.len() as u32);
 
-        str
+        builder
     }
 
     fn get_heap_region(&self) -> &HeapAllocationHeader {
