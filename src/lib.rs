@@ -144,10 +144,10 @@ impl std::cmp::PartialEq for ByteView {
         // If we are inlined, the other string must be inlined too,
         // so checking the prefix is enough
         if self.is_inline() {
-            return self.get_short_slice(len) == other.get_short_slice(len);
+            self.get_short_slice(len) == other.get_short_slice(len)
+        } else {
+            self.get_long_slice(len) == other.get_long_slice(len)
         }
-
-        self.get_long_slice(len) == other.get_long_slice(len)
     }
 }
 
