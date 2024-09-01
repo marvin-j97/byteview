@@ -724,6 +724,11 @@ mod tests {
         let copycopy = copy.slice(0..4);
         assert_eq!(b"this", &*copycopy);
 
+        {
+            let copycopy = copy.slice(0..=4);
+            assert_eq!(b"thisi", &*copycopy);
+        }
+
         assert_eq!(1, slice.ref_count());
 
         drop(copy);
