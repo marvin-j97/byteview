@@ -136,17 +136,15 @@ impl std::cmp::PartialEq for ByteView {
             }
         }
 
-        let len = self.len as usize;
-
         // NOTE: At this point we know
         // both strings must have the same prefix and same length
         //
         // If we are inlined, the other string must be inlined too,
         // so checking the prefix is enough
         if self.is_inline() {
-            self.get_short_slice(len) == other.get_short_slice(len)
+            self.get_short_slice() == other.get_short_slice()
         } else {
-            self.get_long_slice(len) == other.get_long_slice(len)
+            self.get_long_slice() == other.get_long_slice()
         }
     }
 }
@@ -157,8 +155,8 @@ impl std::cmp::Ord for ByteView {
             if self.len <= 4 && other.len <= 4 {
                 self.len.cmp(&other.len)
             } else if self.is_inline() && other.is_inline() {
-                let a = self.get_short_slice(self.len as usize);
-                let b = other.get_short_slice(other.len as usize);
+                let a = self.get_short_slice();
+                let b = other.get_short_slice();
                 a.cmp(b)
             } else {
                 self.deref().cmp(other.deref())
@@ -183,12 +181,10 @@ impl Deref for ByteView {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        let len = self.len as usize;
-
         if self.is_inline() {
-            self.get_short_slice(len)
+            self.get_short_slice()
         } else {
-            self.get_long_slice(len)
+            self.get_long_slice()
         }
     }
 }
@@ -200,7 +196,6 @@ impl std::hash::Hash for ByteView {
 }
 
 impl ByteView {
-    #[inline]
     const fn is_inline(&self) -> bool {
         self.len <= INLINE_SIZE as u32
     }
@@ -368,7 +363,7 @@ impl ByteView {
                 rest: [0; 8],
             };
 
-            let slice = &self.get_short_slice(self.len())[begin..end];
+            let slice = &self.get_short_slice()[begin..end];
             debug_assert_eq!(slice.len(), new_len);
 
             unsafe {
@@ -386,7 +381,7 @@ impl ByteView {
                 rest: [0; 8],
             };
 
-            let slice = &self.get_long_slice(self.len())[begin..end];
+            let slice = &self.get_long_slice()[begin..end];
             debug_assert_eq!(slice.len(), new_len);
 
             unsafe {
@@ -411,7 +406,7 @@ impl ByteView {
                 rest: self.rest,
             };
 
-            let prefix = &self.get_long_slice(self.len())[begin..(begin + 4)];
+            let prefix = &self.get_long_slice()[begin..(begin + 4)];
             debug_assert_eq!(prefix.len(), 4);
             cloned.prefix.copy_from_slice(prefix);
 
@@ -431,7 +426,9 @@ impl ByteView {
         self.len as usize
     }
 
-    fn get_short_slice(&self, len: usize) -> &[u8] {
+    fn get_short_slice(&self) -> &[u8] {
+        let len = self.len();
+
         debug_assert!(
             len <= INLINE_SIZE,
             "cannot get short slice - slice is not inlined"
@@ -445,7 +442,9 @@ impl ByteView {
         }
     }
 
-    fn get_long_slice(&self, len: usize) -> &[u8] {
+    fn get_long_slice(&self) -> &[u8] {
+        let len = self.len();
+
         debug_assert!(
             len > INLINE_SIZE,
             "cannot get long slice - slice is inlined"
@@ -453,6 +452,12 @@ impl ByteView {
 
         // SAFETY: Shall only be called if slice is heap allocated
         unsafe { std::slice::from_raw_parts(self.data, len) }
+    }
+}
+
+impl std::borrow::Borrow<[u8]> for ByteView {
+    fn borrow(&self) -> &[u8] {
+        self.deref()
     }
 }
 
@@ -727,6 +732,7 @@ mod tests {
         {
             let copycopy = copy.slice(0..=4);
             assert_eq!(b"thisi", &*copycopy);
+            assert_eq!(b't', copycopy[0]);
         }
 
         assert_eq!(1, slice.ref_count());
