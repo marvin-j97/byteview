@@ -377,16 +377,12 @@ impl ByteView {
     pub fn starts_with<T: AsRef<[u8]>>(&self, needle: T) -> bool {
         let needle = needle.as_ref();
 
-        match needle.len() {
-            0..=PREFIX_SIZE => {
-                if !self.prefix.starts_with(needle) {
-                    return false;
-                }
-            }
-            _ => {
-                if !self.prefix.starts_with(&needle[0..PREFIX_SIZE]) {
-                    return false;
-                }
+        unsafe {
+            let len = PREFIX_SIZE.min(needle.len());
+            let needle_prefix: &[u8] = needle.get_unchecked(..len);
+
+            if !self.prefix.starts_with(needle_prefix) {
+                return false;
             }
         }
 
