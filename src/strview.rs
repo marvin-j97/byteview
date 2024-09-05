@@ -16,7 +16,7 @@ pub struct StrView(ByteView);
 
 impl std::fmt::Debug for StrView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.deref())
+        write!(f, "{:?}", &**self)
     }
 }
 
@@ -25,7 +25,7 @@ impl Deref for StrView {
 
     fn deref(&self) -> &Self::Target {
         // SAFETY: Constructor takes a &str
-        unsafe { std::str::from_utf8_unchecked(self.0.deref()) }
+        unsafe { std::str::from_utf8_unchecked(&self.0) }
     }
 }
 
@@ -37,18 +37,18 @@ impl StrView {
     /// # Panics
     ///
     /// Panics if the length does not fit in a u32 (4 GiB).
-    pub fn new(s: &str) -> Self {
+    #[must_use] pub fn new(s: &str) -> Self {
         Self(ByteView::new(s.as_bytes()))
     }
 
     /// Clones the contents of this string into a string.
-    pub fn to_owned(&self) -> String {
+    #[must_use] pub fn to_owned(&self) -> String {
         self.deref().to_owned()
     }
 
     /// Clones the contents of this string into an independently tracked string.
-    pub fn to_detached(&self) -> Self {
-        Self::new(self.deref())
+    #[must_use] pub fn to_detached(&self) -> Self {
+        Self::new(self)
     }
 
     /// Clones the given range of the existing string without heap allocation.
@@ -57,12 +57,12 @@ impl StrView {
     }
 
     /// Returns `true` if the string is empty.
-    pub const fn is_empty(&self) -> bool {
+    #[must_use] pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Returns the amount of bytes in the string.
-    pub const fn len(&self) -> usize {
+    #[must_use] pub const fn len(&self) -> usize {
         self.0.len()
     }
 
@@ -75,13 +75,13 @@ impl StrView {
 
 impl std::borrow::Borrow<str> for StrView {
     fn borrow(&self) -> &str {
-        self.deref()
+        self
     }
 }
 
 impl AsRef<str> for StrView {
     fn as_ref(&self) -> &str {
-        self.deref()
+        self
     }
 }
 

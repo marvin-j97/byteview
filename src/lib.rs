@@ -35,6 +35,16 @@
 //! drop(slice);
 //! ```
 
+#![deny(clippy::all, missing_docs, clippy::cargo)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::indexing_slicing)]
+#![warn(
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
+
 mod byteview;
 mod strview;
 

@@ -122,7 +122,7 @@ impl std::cmp::Ord for ByteView {
                 let b = other.get_short_slice();
                 a.cmp(b)
             } else {
-                self.deref().cmp(other.deref())
+                self.deref().cmp(&**other)
             }
         })
     }
@@ -136,7 +136,7 @@ impl std::cmp::PartialOrd for ByteView {
 
 impl std::fmt::Debug for ByteView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.deref())
+        write!(f, "{:?}", &**self)
     }
 }
 
@@ -154,7 +154,7 @@ impl Deref for ByteView {
 
 impl std::hash::Hash for ByteView {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.deref().hash(state)
+        self.deref().hash(state);
     }
 }
 
@@ -170,7 +170,7 @@ impl ByteView {
     /// # Panics
     ///
     /// Panics if the length does not fit in a u32 (4 GiB).
-    pub fn new(slice: &[u8]) -> Self {
+    #[must_use] pub fn new(slice: &[u8]) -> Self {
         let slice_len = slice.len();
 
         let Ok(len) = u32::try_from(slice_len) else {
@@ -252,7 +252,7 @@ impl ByteView {
 
     /// Returns the ref_count of the underlying heap allocation.
     #[doc(hidden)]
-    pub fn ref_count(&self) -> u64 {
+    #[must_use] pub fn ref_count(&self) -> u64 {
         if self.is_inline() {
             1
         } else {
@@ -261,8 +261,8 @@ impl ByteView {
     }
 
     /// Clones the contents of this slice into an independently tracked slice.
-    pub fn to_detached(&self) -> Self {
-        Self::new(self.deref())
+    #[must_use] pub fn to_detached(&self) -> Self {
+        Self::new(self)
     }
 
     /// Clones the given range of the existing slice without heap allocation.
@@ -297,15 +297,11 @@ impl ByteView {
 
         assert!(
             begin <= end,
-            "range start must not be greater than end: {:?} <= {:?}",
-            begin,
-            end,
+            "range start must not be greater than end: {begin:?} <= {end:?}",
         );
         assert!(
             end <= self_len,
-            "range end out of bounds: {:?} <= {:?}",
-            end,
-            self_len,
+            "range end out of bounds: {end:?} <= {self_len:?}",
         );
 
         let new_len = end - begin;
@@ -395,12 +391,12 @@ impl ByteView {
     }
 
     /// Returns `true` if the slice is empty.
-    pub const fn is_empty(&self) -> bool {
+    #[must_use] pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns the amount of bytes in the slice.
-    pub const fn len(&self) -> usize {
+    #[must_use] pub const fn len(&self) -> usize {
         self.len as usize
     }
 
@@ -435,13 +431,13 @@ impl ByteView {
 
 impl std::borrow::Borrow<[u8]> for ByteView {
     fn borrow(&self) -> &[u8] {
-        self.deref()
+        self
     }
 }
 
 impl AsRef<[u8]> for ByteView {
     fn as_ref(&self) -> &[u8] {
-        self.deref()
+        self
     }
 }
 
