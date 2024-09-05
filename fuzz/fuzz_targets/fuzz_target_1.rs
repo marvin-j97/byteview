@@ -16,12 +16,13 @@ fuzz_target!(|data: &[u8]| {
         let a = ByteView::from(&*input1);
         let b = ByteView::from(&*input2);
 
-        eprintln!("{a:?} <=> {b:?}");
+        // eprintln!("{a:?} <=> {b:?}");
 
         assert_eq!(input1 == input2, a == b);
         assert_eq!(input1.cmp(&input2), a.cmp(&b));
         assert_eq!(input1.len(), a.len());
         assert_eq!(input2.len(), b.len());
+        assert_eq!(input1.starts_with(&input2), a.starts_with(&b));
 
         let a_c = a.clone();
         assert_eq!(a, a_c);
