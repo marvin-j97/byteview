@@ -35,3 +35,9 @@ Allocating 500k `"helloworld".repeat(1000)` (len=10'000) strings:
 | `Arc<[u8]>`     | 5 GB       |
 | `tokio::Bytes`  | 5 GB       |
 | `ByteView`     | 5 GB       |
+
+## Run fuzz tests
+
+```bash
+cargo +nightly fuzz run fuzz_target_1
+```

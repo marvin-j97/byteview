@@ -88,11 +88,11 @@ impl Eq for ByteView {}
 impl std::cmp::PartialEq for ByteView {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            let src_ptr = self as *const ByteView as *const u8;
-            let other_ptr: *const u8 = other as *const ByteView as *const u8;
+            let src_ptr = (self as *const Self).cast::<u8>();
+            let other_ptr: *const u8 = (other as *const Self).cast::<u8>();
 
-            let a = *(src_ptr as *const u64);
-            let b = *(other_ptr as *const u64);
+            let a = *src_ptr.cast::<u64>();
+            let b = *other_ptr.cast::<u64>();
 
             if a != b {
                 return false;
@@ -188,7 +188,7 @@ impl ByteView {
             // SAFETY: We check for inlinability
             // so we know the the input slice fits our buffer
             unsafe {
-                let base_ptr = &mut builder as *mut ByteView as *mut u8;
+                let base_ptr = std::ptr::addr_of_mut!(builder) as *mut u8;
                 let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, slice_len);
             }
@@ -210,7 +210,7 @@ impl ByteView {
                 builder.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
 
                 // Copy byte slice into heap allocation
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), builder.data as *mut u8, slice_len);
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), builder.data.cast_mut(), slice_len);
 
                 {
                     // Set pointer in "rest" to heap allocation address
@@ -245,7 +245,7 @@ impl ByteView {
             let ptr = u64::from_ne_bytes(self.rest);
             let ptr = ptr as *const u8;
 
-            let heap_region: *const HeapAllocationHeader = ptr as *const HeapAllocationHeader;
+            let heap_region: *const HeapAllocationHeader = ptr.cast::<HeapAllocationHeader>();
             &*heap_region
         }
     }
@@ -321,7 +321,7 @@ impl ByteView {
             debug_assert_eq!(slice.len(), new_len);
 
             unsafe {
-                let base_ptr = &mut cloned as *mut ByteView as *mut u8;
+                let base_ptr = std::ptr::addr_of_mut!(cloned) as *mut u8;
                 let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, new_len);
             }
@@ -339,7 +339,7 @@ impl ByteView {
             debug_assert_eq!(slice.len(), new_len);
 
             unsafe {
-                let base_ptr = &mut cloned as *mut ByteView as *mut u8;
+                let base_ptr = std::ptr::addr_of_mut!(cloned) as *mut u8;
                 let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, new_len);
             }
@@ -410,7 +410,7 @@ impl ByteView {
 
         // SAFETY: Shall only be called if slice is inlined
         unsafe {
-            let base_ptr = self as *const ByteView as *const u8;
+            let base_ptr = (self as *const Self).cast::<u8>();
             let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
             std::slice::from_raw_parts(prefix_offset, len)
         }
