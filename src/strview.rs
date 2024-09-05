@@ -55,6 +55,7 @@ impl StrView {
     }
 
     /// Clones the given range of the existing string without heap allocation.
+    #[must_use]
     pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Self {
         Self(self.0.slice(range))
     }
@@ -219,7 +220,10 @@ mod tests {
     #[cfg(target_pointer_width = "64")]
     fn medium_str_clone() {
         let slice = StrView::from("abcdefabcdefabcdefa");
+
+        #[allow(clippy::redundant_clone)]
         let copy = slice.clone();
+
         assert_eq!(slice, copy);
     }
 
@@ -233,7 +237,10 @@ mod tests {
     #[test]
     fn long_str_clone() {
         let slice = StrView::from("abcdefabcdefabcdefababcd");
+
+        #[allow(clippy::redundant_clone)]
         let copy = slice.clone();
+
         assert_eq!(slice, copy);
     }
 
