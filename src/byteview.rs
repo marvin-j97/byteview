@@ -531,7 +531,7 @@ mod serde {
                 where
                     E: de::Error,
                 {
-                    Ok(ByteView::from(v))
+                    Ok(ByteView::new(v))
                 }
             }
 

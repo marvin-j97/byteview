@@ -36,5 +36,6 @@
 //! ```
 
 mod byteview;
+mod strview;
 
-pub use byteview::ByteView;
+pub use {byteview::ByteView, strview::StrView};
