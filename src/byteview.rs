@@ -374,6 +374,26 @@ impl ByteView {
         }
     }
 
+    /// Returns `true` if `needle` is a prefix of the slice or equal to the slice.
+    pub fn starts_with<T: AsRef<[u8]>>(&self, needle: T) -> bool {
+        let needle = needle.as_ref();
+
+        match needle.len() {
+            0..=PREFIX_SIZE => {
+                if !self.prefix.starts_with(needle) {
+                    return false;
+                }
+            }
+            _ => {
+                if !self.prefix.starts_with(&needle[0..PREFIX_SIZE]) {
+                    return false;
+                }
+            }
+        }
+
+        self.deref().starts_with(needle)
+    }
+
     /// Returns `true` if the slice is empty.
     pub const fn is_empty(&self) -> bool {
         self.len == 0
@@ -754,6 +774,20 @@ mod tests {
         assert_eq!(&*copy, b"");
 
         assert_eq!(1, copy.ref_count());
+    }
+
+    #[test]
+    fn tiny_str_starts_with() {
+        let a = ByteView::from("abc");
+        assert!(a.starts_with(b"ab"));
+        assert!(!a.starts_with(b"b"));
+    }
+
+    #[test]
+    fn long_str_starts_with() {
+        let a = ByteView::from("abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdef");
+        assert!(a.starts_with(b"abcdef"));
+        assert!(!a.starts_with(b"def"));
     }
 
     #[test]
