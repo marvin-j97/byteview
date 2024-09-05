@@ -170,7 +170,8 @@ impl ByteView {
     /// # Panics
     ///
     /// Panics if the length does not fit in a u32 (4 GiB).
-    #[must_use] pub fn new(slice: &[u8]) -> Self {
+    #[must_use]
+    pub fn new(slice: &[u8]) -> Self {
         let slice_len = slice.len();
 
         let Ok(len) = u32::try_from(slice_len) else {
@@ -252,7 +253,8 @@ impl ByteView {
 
     /// Returns the ref_count of the underlying heap allocation.
     #[doc(hidden)]
-    #[must_use] pub fn ref_count(&self) -> u64 {
+    #[must_use]
+    pub fn ref_count(&self) -> u64 {
         if self.is_inline() {
             1
         } else {
@@ -261,7 +263,8 @@ impl ByteView {
     }
 
     /// Clones the contents of this slice into an independently tracked slice.
-    #[must_use] pub fn to_detached(&self) -> Self {
+    #[must_use]
+    pub fn to_detached(&self) -> Self {
         Self::new(self)
     }
 
@@ -391,12 +394,14 @@ impl ByteView {
     }
 
     /// Returns `true` if the slice is empty.
-    #[must_use] pub const fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns the amount of bytes in the slice.
-    #[must_use] pub const fn len(&self) -> usize {
+    #[must_use]
+    pub const fn len(&self) -> usize {
         self.len as usize
     }
 
@@ -706,7 +711,7 @@ mod tests {
         {
             let copycopy = copy.slice(0..=4);
             assert_eq!(b"thisi", &*copycopy);
-            assert_eq!(b't', copycopy[0]);
+            assert_eq!(b't', *copycopy.first().unwrap());
         }
 
         assert_eq!(1, slice.ref_count());

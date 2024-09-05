@@ -42,7 +42,8 @@
     clippy::pedantic,
     clippy::nursery,
     clippy::expect_used,
-    clippy::unwrap_used
+    clippy::unwrap_used,
+    clippy::indexing_slicing
 )]
 
 mod byteview;
