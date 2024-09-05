@@ -260,14 +260,9 @@ impl ByteView {
         }
     }
 
-    /// Clones the contents of this slice into a vector.
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.deref().to_vec()
-    }
-
     /// Clones the contents of this slice into an independently tracked slice.
     pub fn to_detached(&self) -> Self {
-        Self::from(self.deref())
+        Self::new(self.deref())
     }
 
     /// Clones the given range of the existing slice without heap allocation.
