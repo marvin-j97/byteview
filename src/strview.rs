@@ -37,17 +37,20 @@ impl StrView {
     /// # Panics
     ///
     /// Panics if the length does not fit in a u32 (4 GiB).
-    #[must_use] pub fn new(s: &str) -> Self {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
         Self(ByteView::new(s.as_bytes()))
     }
 
     /// Clones the contents of this string into a string.
-    #[must_use] pub fn to_owned(&self) -> String {
+    #[must_use]
+    pub fn to_owned(&self) -> String {
         self.deref().to_owned()
     }
 
     /// Clones the contents of this string into an independently tracked string.
-    #[must_use] pub fn to_detached(&self) -> Self {
+    #[must_use]
+    pub fn to_detached(&self) -> Self {
         Self::new(self)
     }
 
@@ -57,12 +60,14 @@ impl StrView {
     }
 
     /// Returns `true` if the string is empty.
-    #[must_use] pub const fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Returns the amount of bytes in the string.
-    #[must_use] pub const fn len(&self) -> usize {
+    #[must_use]
+    pub const fn len(&self) -> usize {
         self.0.len()
     }
 
