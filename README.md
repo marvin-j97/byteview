@@ -12,6 +12,14 @@ An immutable byte slice that may be inlined, and can be partially cloned without
 
 ## Memory usage
 
+Allocating 200M "" (len=0) strings:
+
+|  Struct         | Memory Usage |
+|-----------------|--------------|
+| `Arc<[u8]>`     | 9.6 GB      |
+| `tokio::Bytes`  | 6.4 GB       |
+| `ByteView`     | 4.8 GB       |
+
 Allocating 200M "helloworld" (len=10) strings:
 
 |  Struct         | Memory Usage |
@@ -27,6 +35,14 @@ Allocating 100M "helloworldhelloworld" (len=20) strings:
 | `Arc<[u8]>`     | 6.4 GB       |
 | `tokio::Bytes`  | 6.4 GB       |
 | `ByteView`     | 2.4 GB       |
+
+Allocating 50M "helloworldhelloworldhelloworldhelloworld" (len=30) strings:
+
+|  Struct         | Memory Usage |
+|-----------------|--------------|
+| `Arc<[u8]>`     | 4.0 GB       |
+| `tokio::Bytes`  | 4.0 GB       |
+| `ByteView`     | 3.6 GB       |
 
 Allocating 500k `"helloworld".repeat(1000)` (len=10'000) strings:
 
