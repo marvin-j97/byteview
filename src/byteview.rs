@@ -45,7 +45,7 @@ impl Default for Trailer {
         Self {
             short: ManuallyDrop::new(ShortRepr {
                 len: 0,
-                data: [0; 20],
+                data: [0; INLINE_SIZE],
             }),
         }
     }
@@ -209,7 +209,10 @@ impl ByteView {
 
         let mut builder = Self {
             trailer: Trailer {
-                short: ManuallyDrop::new(ShortRepr { len, data: [0; 20] }),
+                short: ManuallyDrop::new(ShortRepr {
+                    len,
+                    data: [0; INLINE_SIZE],
+                }),
             },
         };
 
@@ -364,7 +367,10 @@ impl ByteView {
         if new_len <= INLINE_SIZE && self_len <= INLINE_SIZE {
             let mut cloned = Self {
                 trailer: Trailer {
-                    short: ManuallyDrop::new(ShortRepr { len, data: [0; 20] }),
+                    short: ManuallyDrop::new(ShortRepr {
+                        len,
+                        data: [0; INLINE_SIZE],
+                    }),
                 },
             };
 
@@ -381,7 +387,10 @@ impl ByteView {
         } else if new_len <= INLINE_SIZE && self_len > INLINE_SIZE {
             let mut cloned = Self {
                 trailer: Trailer {
-                    short: ManuallyDrop::new(ShortRepr { len, data: [0; 20] }),
+                    short: ManuallyDrop::new(ShortRepr {
+                        len,
+                        data: [0; INLINE_SIZE],
+                    }),
                 },
             };
 
