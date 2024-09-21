@@ -1,4 +1,5 @@
 use std::{
+    mem::ManuallyDrop,
     ops::Deref,
     sync::Arc,
     sync::{atomic::AtomicU64, atomic::Ordering},
@@ -19,6 +20,37 @@ struct HeapAllocationHeader {
 
 // TODO: track allocations somehow in tests
 
+#[repr(C)]
+struct ShortRepr {
+    len: u32,
+    data: [u8; INLINE_SIZE],
+}
+
+#[repr(C)]
+struct LongRepr {
+    len: u32,
+    prefix: [u8; PREFIX_SIZE],
+    heap: *const u8,
+    data: *const u8,
+}
+
+#[repr(C)]
+pub union Trailer {
+    short: ManuallyDrop<ShortRepr>,
+    long: ManuallyDrop<LongRepr>,
+}
+
+impl Default for Trailer {
+    fn default() -> Self {
+        Self {
+            short: ManuallyDrop::new(ShortRepr {
+                len: 0,
+                data: [0; 20],
+            }),
+        }
+    }
+}
+
 /// An immutable byte slice
 ///
 /// Will be inlined (no pointer dereference or heap allocation)
@@ -35,22 +67,9 @@ struct HeapAllocationHeader {
 /// - [Velox' String View](https://facebookincubator.github.io/velox/develop/vectors.html)
 /// - [Apache Arrow's String View](https://arrow.apache.org/docs/cpp/api/datatype.html#_CPPv4N5arrow14BinaryViewType6c_typeE)
 #[repr(C)]
+#[derive(Default)]
 pub struct ByteView {
-    len: u32,
-    prefix: [u8; PREFIX_SIZE],
-    rest: [u8; 8],
-    data: *const u8,
-}
-
-impl Default for ByteView {
-    fn default() -> Self {
-        Self {
-            len: 0,
-            prefix: [0; 4],
-            rest: [0; 8],
-            data: std::ptr::null(),
-        }
-    }
+    trailer: Trailer,
 }
 
 impl Clone for ByteView {
@@ -74,10 +93,10 @@ impl Drop for ByteView {
         unsafe {
             let header_size = std::mem::size_of::<HeapAllocationHeader>();
             let alignment = std::mem::align_of::<HeapAllocationHeader>();
-            let total_size = header_size + self.len as usize;
+            let total_size = header_size + self.len();
             let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
 
-            let ptr = u64::from_ne_bytes(self.rest) as *mut u8;
+            let ptr = self.trailer.long.heap.cast_mut();
             std::alloc::dealloc(ptr, layout);
         }
     }
@@ -114,9 +133,12 @@ impl std::cmp::PartialEq for ByteView {
 
 impl std::cmp::Ord for ByteView {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.prefix.cmp(&other.prefix).then_with(|| {
-            if self.len <= 4 && other.len <= 4 {
-                self.len.cmp(&other.len)
+        self.prefix().cmp(other.prefix()).then_with(|| {
+            let this_len = self.len();
+            let other_len = other.len();
+
+            if this_len <= 4 && other_len <= 4 {
+                this_len.cmp(&other_len)
             } else if self.is_inline() && other.is_inline() {
                 let a = self.get_short_slice();
                 let b = other.get_short_slice();
@@ -159,8 +181,15 @@ impl std::hash::Hash for ByteView {
 }
 
 impl ByteView {
-    const fn is_inline(&self) -> bool {
-        self.len <= INLINE_SIZE as u32
+    fn prefix(&self) -> &[u8] {
+        let len = PREFIX_SIZE.min(self.len());
+
+        // SAFETY: Both trailer layouts have the prefix stored at the same position
+        unsafe { self.trailer.short.data.get_unchecked(..len) }
+    }
+
+    fn is_inline(&self) -> bool {
+        self.len() <= INLINE_SIZE
     }
 
     /// Creates a new slice from an existing byte slice.
@@ -179,10 +208,9 @@ impl ByteView {
         };
 
         let mut builder = Self {
-            len,
-            prefix: [0; PREFIX_SIZE],
-            rest: [0; 8],
-            data: std::ptr::null(),
+            trailer: Trailer {
+                short: ManuallyDrop::new(ShortRepr { len, data: [0; 20] }),
+            },
         };
 
         if builder.is_inline() {
@@ -194,9 +222,13 @@ impl ByteView {
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, slice_len);
             }
         } else {
-            builder.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
-
             unsafe {
+                (*builder.trailer.long)
+                    .prefix
+                    .copy_from_slice(&slice[0..PREFIX_SIZE]);
+
+                eprintln!("prefix={:?}", (*builder.trailer.long).prefix.as_ptr());
+
                 let header_size = std::mem::size_of::<HeapAllocationHeader>();
                 let alignment = std::mem::align_of::<HeapAllocationHeader>();
                 let total_size = header_size + slice_len;
@@ -207,18 +239,25 @@ impl ByteView {
                     std::alloc::handle_alloc_error(layout);
                 }
 
+                eprintln!("heap={heap_ptr:?}");
+
                 // SAFETY: We store a pointer to the copied slice, which comes directly after the header
-                builder.data = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
+                (*builder.trailer.long).data =
+                    heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
+
+                eprintln!("data={:?}", (*builder.trailer.long).data);
 
                 // Copy byte slice into heap allocation
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), builder.data.cast_mut(), slice_len);
+                std::ptr::copy_nonoverlapping(
+                    slice.as_ptr(),
+                    (*builder.trailer.long).data.cast_mut(),
+                    slice_len,
+                );
 
-                {
-                    // Set pointer in "rest" to heap allocation address
-                    let ptr = heap_ptr as u64;
-                    let ptr_bytes = ptr.to_ne_bytes();
-                    builder.rest = ptr_bytes;
-                }
+                // Set pointer to heap allocation address
+                (*builder.trailer.long).heap = heap_ptr;
+
+                eprintln!("heap ptr {:?}", (*builder.trailer.long).heap);
 
                 // Set ref count
                 let heap_region = heap_ptr as *const HeapAllocationHeader;
@@ -229,7 +268,9 @@ impl ByteView {
 
         debug_assert_eq!(slice, &*builder);
         debug_assert_eq!(1, builder.ref_count());
-        debug_assert_eq!(builder.len, slice.len() as u32);
+        debug_assert_eq!(builder.len(), slice.len());
+
+        eprintln!("created XD");
 
         builder
     }
@@ -241,10 +282,12 @@ impl ByteView {
         );
 
         unsafe {
-            // SAFETY: Shall only be used when the slice is not inlined
+            /*   // SAFETY: Shall only be used when the slice is not inlined
             // otherwise the heap pointer would be garbage
             let ptr = u64::from_ne_bytes(self.rest);
-            let ptr = ptr as *const u8;
+            let ptr = ptr as *const u8; */
+
+            let ptr = self.trailer.long.heap;
 
             let heap_region: *const HeapAllocationHeader = ptr.cast::<HeapAllocationHeader>();
             &*heap_region
@@ -278,6 +321,11 @@ impl ByteView {
     /// let copy = slice.slice(11..);
     /// assert_eq!(b"thisisalongstring", &*copy);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slice is out of bounds.
+    #[must_use]
     pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Self {
         use core::ops::Bound;
 
@@ -308,16 +356,16 @@ impl ByteView {
         );
 
         let new_len = end - begin;
+        let len = u32::try_from(new_len).unwrap();
 
         // Target and destination slices are inlined
         // so we just need to memcpy the struct, and replace
         // the inline slice with the requested range
         if new_len <= INLINE_SIZE && self_len <= INLINE_SIZE {
             let mut cloned = Self {
-                len: u32::try_from(new_len).unwrap(),
-                data: std::ptr::null(),
-                prefix: [0; PREFIX_SIZE],
-                rest: [0; 8],
+                trailer: Trailer {
+                    short: ManuallyDrop::new(ShortRepr { len, data: [0; 20] }),
+                },
             };
 
             let slice = &self.get_short_slice()[begin..end];
@@ -332,10 +380,9 @@ impl ByteView {
             cloned
         } else if new_len <= INLINE_SIZE && self_len > INLINE_SIZE {
             let mut cloned = Self {
-                len: u32::try_from(new_len).unwrap(),
-                data: std::ptr::null(),
-                prefix: [0; PREFIX_SIZE],
-                rest: [0; 8],
+                trailer: Trailer {
+                    short: ManuallyDrop::new(ShortRepr { len, data: [0; 20] }),
+                },
             };
 
             let slice = &self.get_long_slice()[begin..end];
@@ -354,18 +401,24 @@ impl ByteView {
             debug_assert!(rc_before < u64::MAX, "refcount overflow");
 
             let mut cloned = Self {
-                len: u32::try_from(new_len).unwrap(),
                 // SAFETY: self.data must be defined
                 // we cannot get a range larger than our own slice
                 // so we cannot be inlined while the requested slice is not inlinable
-                data: unsafe { self.data.add(begin) },
-                prefix: [0; PREFIX_SIZE],
-                rest: self.rest,
+                trailer: Trailer {
+                    long: ManuallyDrop::new(LongRepr {
+                        len,
+                        prefix: [0; PREFIX_SIZE],
+                        heap: unsafe { self.trailer.long.heap },
+                        data: unsafe { self.trailer.long.data.add(begin) },
+                    }),
+                },
             };
 
             let prefix = &self.get_long_slice()[begin..(begin + 4)];
             debug_assert_eq!(prefix.len(), 4);
-            cloned.prefix.copy_from_slice(prefix);
+            unsafe {
+                (*cloned.trailer.long).prefix.copy_from_slice(prefix);
+            }
 
             cloned
         } else {
@@ -381,7 +434,7 @@ impl ByteView {
             let len = PREFIX_SIZE.min(needle.len());
             let needle_prefix: &[u8] = needle.get_unchecked(..len);
 
-            if !self.prefix.starts_with(needle_prefix) {
+            if !self.prefix().starts_with(needle_prefix) {
                 return false;
             }
         }
@@ -391,14 +444,14 @@ impl ByteView {
 
     /// Returns `true` if the slice is empty.
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Returns the amount of bytes in the slice.
     #[must_use]
-    pub const fn len(&self) -> usize {
-        self.len as usize
+    pub fn len(&self) -> usize {
+        unsafe { self.trailer.short.len as usize }
     }
 
     fn get_short_slice(&self) -> &[u8] {
@@ -426,7 +479,7 @@ impl ByteView {
         );
 
         // SAFETY: Shall only be called if slice is heap allocated
-        unsafe { std::slice::from_raw_parts(self.data, len) }
+        unsafe { std::slice::from_raw_parts(self.trailer.long.data, len) }
     }
 }
 
@@ -544,6 +597,17 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn memsize() {
+        use crate::byteview::{LongRepr, ShortRepr, Trailer};
+
+        assert_eq!(
+            std::mem::size_of::<ShortRepr>(),
+            std::mem::size_of::<LongRepr>()
+        );
+        assert_eq!(
+            std::mem::size_of::<Trailer>(),
+            std::mem::size_of::<LongRepr>()
+        );
+
         assert_eq!(24, std::mem::size_of::<ByteView>());
         assert_eq!(
             32,
@@ -582,7 +646,7 @@ mod tests {
         assert_eq!(6, slice.len());
         assert_eq!(&*slice, b"abcdef");
         assert_eq!(1, slice.ref_count());
-        assert_eq!(&slice.prefix, b"abcd");
+        assert_eq!(&slice.prefix(), b"abcd");
         assert!(slice.is_inline());
     }
 
@@ -593,7 +657,7 @@ mod tests {
         assert_eq!(12, slice.len());
         assert_eq!(&*slice, b"abcdefabcdef");
         assert_eq!(1, slice.ref_count());
-        assert_eq!(&slice.prefix, b"abcd");
+        assert_eq!(&slice.prefix(), b"abcd");
         assert!(slice.is_inline());
     }
 
@@ -604,7 +668,7 @@ mod tests {
         assert_eq!(20, slice.len());
         assert_eq!(&*slice, b"abcdefabcdefabcdabcd");
         assert_eq!(1, slice.ref_count());
-        assert_eq!(&slice.prefix, b"abcd");
+        assert_eq!(&slice.prefix(), b"abcd");
         assert!(slice.is_inline());
     }
 
@@ -614,7 +678,7 @@ mod tests {
         let slice = ByteView::from("abcdefabcdefabcdefab");
         let copy = slice.clone();
         assert_eq!(slice, copy);
-        assert_eq!(copy.prefix, slice.prefix);
+        assert_eq!(copy.prefix(), slice.prefix());
 
         assert_eq!(1, slice.ref_count());
 
@@ -628,7 +692,7 @@ mod tests {
         assert_eq!(24, slice.len());
         assert_eq!(&*slice, b"abcdefabcdefabcdefababcd");
         assert_eq!(1, slice.ref_count());
-        assert_eq!(&slice.prefix, b"abcd");
+        assert_eq!(&slice.prefix(), b"abcd");
         assert!(!slice.is_inline());
     }
 
@@ -637,7 +701,7 @@ mod tests {
         let slice = ByteView::from("abcdefabcdefabcdefababcd");
         let copy = slice.clone();
         assert_eq!(slice, copy);
-        assert_eq!(copy.prefix, slice.prefix);
+        assert_eq!(copy.prefix(), slice.prefix());
 
         assert_eq!(2, slice.ref_count());
 
@@ -665,7 +729,7 @@ mod tests {
 
         let copy = slice.slice(11..);
         assert_eq!(b"thisisalongstring", &*copy);
-        assert_eq!(&copy.prefix, b"this");
+        assert_eq!(&copy.prefix(), b"this");
 
         assert_eq!(1, slice.ref_count());
 
