@@ -230,8 +230,6 @@ impl ByteView {
                     .prefix
                     .copy_from_slice(&slice[0..PREFIX_SIZE]);
 
-                eprintln!("prefix={:?}", (*builder.trailer.long).prefix.as_ptr());
-
                 let header_size = std::mem::size_of::<HeapAllocationHeader>();
                 let alignment = std::mem::align_of::<HeapAllocationHeader>();
                 let total_size = header_size + slice_len;
@@ -242,13 +240,9 @@ impl ByteView {
                     std::alloc::handle_alloc_error(layout);
                 }
 
-                eprintln!("heap={heap_ptr:?}");
-
                 // SAFETY: We store a pointer to the copied slice, which comes directly after the header
                 (*builder.trailer.long).data =
                     heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
-
-                eprintln!("data={:?}", (*builder.trailer.long).data);
 
                 // Copy byte slice into heap allocation
                 std::ptr::copy_nonoverlapping(
@@ -260,8 +254,6 @@ impl ByteView {
                 // Set pointer to heap allocation address
                 (*builder.trailer.long).heap = heap_ptr;
 
-                eprintln!("heap ptr {:?}", (*builder.trailer.long).heap);
-
                 // Set ref count
                 let heap_region = heap_ptr as *const HeapAllocationHeader;
                 let heap_region = &*heap_region;
@@ -272,8 +264,6 @@ impl ByteView {
         debug_assert_eq!(slice, &*builder);
         debug_assert_eq!(1, builder.ref_count());
         debug_assert_eq!(builder.len(), slice.len());
-
-        eprintln!("created XD");
 
         builder
     }
