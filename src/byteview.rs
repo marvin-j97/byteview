@@ -72,6 +72,11 @@ pub struct ByteView {
     trailer: Trailer,
 }
 
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl Send for ByteView {}
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl Sync for ByteView {}
+
 impl Clone for ByteView {
     fn clone(&self) -> Self {
         self.slice(..)
