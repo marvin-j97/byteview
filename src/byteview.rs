@@ -6,10 +6,20 @@ use std::{
 };
 
 #[cfg(target_pointer_width = "64")]
+#[cfg(feature = "slicable")]
 const INLINE_SIZE: usize = 20;
 
+#[cfg(target_pointer_width = "64")]
+#[cfg(not(feature = "slicable"))]
+const INLINE_SIZE: usize = 12;
+
 #[cfg(target_pointer_width = "32")]
+#[cfg(feature = "slicable")]
 const INLINE_SIZE: usize = 16;
+
+#[cfg(target_pointer_width = "32")]
+#[cfg(not(feature = "slicable"))]
+const INLINE_SIZE: usize = 12;
 
 const PREFIX_SIZE: usize = 4;
 
@@ -31,6 +41,8 @@ struct LongRepr {
     len: u32,
     prefix: [u8; PREFIX_SIZE],
     heap: *const u8,
+
+    #[cfg(feature = "slicable")]
     data: *const u8,
 }
 
@@ -79,7 +91,38 @@ unsafe impl Sync for ByteView {}
 
 impl Clone for ByteView {
     fn clone(&self) -> Self {
-        self.slice(..)
+        #[cfg(feature = "slicable")]
+        {
+            self.slice(..)
+        }
+
+        #[cfg(not(feature = "slicable"))]
+        unsafe {
+            if self.is_inline() {
+                Self {
+                    trailer: Trailer {
+                        short: ManuallyDrop::new(ShortRepr {
+                            data: self.trailer.short.data,
+                            len: self.trailer.short.len,
+                        }),
+                    },
+                }
+            } else {
+                let heap_region = self.get_heap_region();
+                let rc_before = heap_region.ref_count.fetch_add(1, Ordering::Release);
+                debug_assert!(rc_before < u64::MAX, "refcount overflow");
+
+                Self {
+                    trailer: Trailer {
+                        long: ManuallyDrop::new(LongRepr {
+                            len: self.len() as u32,
+                            prefix: self.trailer.long.prefix,
+                            heap: self.trailer.long.heap,
+                        }),
+                    },
+                }
+            }
+        }
     }
 }
 
@@ -245,16 +288,16 @@ impl ByteView {
                     std::alloc::handle_alloc_error(layout);
                 }
 
-                // SAFETY: We store a pointer to the copied slice, which comes directly after the header
-                (*builder.trailer.long).data =
-                    heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
+                let data_ptr = heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
+
+                #[cfg(feature = "slicable")]
+                {
+                    // SAFETY: We store a pointer to the copied slice, which comes directly after the header
+                    (*builder.trailer.long).data = data_ptr;
+                }
 
                 // Copy byte slice into heap allocation
-                std::ptr::copy_nonoverlapping(
-                    slice.as_ptr(),
-                    (*builder.trailer.long).data.cast_mut(),
-                    slice_len,
-                );
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), data_ptr, slice_len);
 
                 // Set pointer to heap allocation address
                 (*builder.trailer.long).heap = heap_ptr;
@@ -324,6 +367,7 @@ impl ByteView {
     ///
     /// Panics if the slice is out of bounds.
     #[must_use]
+    #[cfg(feature = "slicable")]
     pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Self {
         use core::ops::Bound;
 
@@ -413,6 +457,8 @@ impl ByteView {
                         len,
                         prefix: [0; PREFIX_SIZE],
                         heap: unsafe { self.trailer.long.heap },
+
+                        #[cfg(feature = "slicable")]
                         data: unsafe { self.trailer.long.data.add(begin) },
                     }),
                 },
@@ -482,8 +528,19 @@ impl ByteView {
             "cannot get long slice - slice is inlined"
         );
 
+        #[cfg(feature = "slicable")]
+        let ptr = unsafe { self.trailer.long.data };
+
+        #[cfg(not(feature = "slicable"))]
+        let ptr = unsafe {
+            self.trailer
+                .long
+                .heap
+                .add(std::mem::size_of::<HeapAllocationHeader>())
+        };
+
         // SAFETY: Shall only be called if slice is heap allocated
-        unsafe { std::slice::from_raw_parts(self.trailer.long.data, len) }
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
 
@@ -612,11 +669,23 @@ mod tests {
             std::mem::size_of::<LongRepr>()
         );
 
-        assert_eq!(24, std::mem::size_of::<ByteView>());
-        assert_eq!(
-            32,
-            std::mem::size_of::<ByteView>() + std::mem::size_of::<HeapAllocationHeader>()
-        );
+        #[cfg(feature = "slicable")]
+        {
+            assert_eq!(24, std::mem::size_of::<ByteView>());
+            assert_eq!(
+                32,
+                std::mem::size_of::<ByteView>() + std::mem::size_of::<HeapAllocationHeader>()
+            );
+        }
+
+        #[cfg(not(feature = "slicable"))]
+        {
+            assert_eq!(16, std::mem::size_of::<ByteView>());
+            assert_eq!(
+                24,
+                std::mem::size_of::<ByteView>() + std::mem::size_of::<HeapAllocationHeader>()
+            );
+        }
     }
 
     #[test]
@@ -667,6 +736,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn medium_long_str() {
         let slice = ByteView::from("abcdefabcdefabcdabcd");
         assert_eq!(20, slice.len());
@@ -678,6 +748,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn medium_str_clone() {
         let slice = ByteView::from("abcdefabcdefabcdefab");
         let copy = slice.clone();
@@ -714,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn long_str_slice_full() {
         let slice = ByteView::from("helloworld_thisisalongstring");
 
@@ -728,6 +800,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn long_str_slice() {
         let slice = ByteView::from("helloworld_thisisalongstring");
 
@@ -743,6 +816,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn long_str_slice_twice() {
         let slice = ByteView::from("helloworld_thisisalongstring");
 
@@ -763,6 +837,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn long_str_slice_downgrade() {
         let slice = ByteView::from("helloworld_thisisalongstring");
 
@@ -802,6 +877,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn short_str_slice_full() {
         let slice = ByteView::from("abcdef");
         let copy = slice.slice(..);
@@ -816,6 +892,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn short_str_slice_part() {
         let slice = ByteView::from("abcdef");
         let copy = slice.slice(3..);
@@ -829,6 +906,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn short_str_slice_empty() {
         let slice = ByteView::from("abcdef");
         let copy = slice.slice(0..0);

@@ -12,27 +12,8 @@
 //!
 //! // No heap allocation - increases the ref count like an Arc<[u8]>
 //! let full_copy = slice.clone();
-//! drop(full_copy);
 //!
-//! // No heap allocation - increases the ref count like an Arc<[u8]>, but we only get a subslice
-//! let copy = slice.slice(11..);
-//! assert_eq!(b"thisisaverylongstring", &*copy);
-//!
-//! // No heap allocation - if the slice is small enough, it will be inlined into the struct...
-//! let copycopy = copy.slice(0..4);
-//! assert_eq!(b"this", &*copycopy);
-//!
-//! // ...so no ref count incrementing is done
 //! assert_eq!(2, slice.ref_count());
-//!
-//! drop(copy);
-//! assert_eq!(1, slice.ref_count());
-//!
-//! drop(copycopy);
-//! assert_eq!(1, slice.ref_count());
-//!
-//! // Our original slice will be automatically freed if all slices vanish
-//! drop(slice);
 //! ```
 
 #![deny(clippy::all, missing_docs, clippy::cargo)]

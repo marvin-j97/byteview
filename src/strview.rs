@@ -61,6 +61,7 @@ impl StrView {
 
     /// Clones the given range of the existing string without heap allocation.
     #[must_use]
+    #[cfg(feature = "slicable")]
     pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Self {
         Self(self.0.slice(range))
     }
@@ -250,6 +251,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn long_str_slice_full() {
         let slice = StrView::from("helloworld_thisisalongstring");
 
@@ -259,6 +261,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn long_str_slice() {
         let slice = StrView::from("helloworld_thisisalongstring");
 
@@ -268,6 +271,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn long_str_slice_twice() {
         let slice = StrView::from("helloworld_thisisalongstring");
 
@@ -280,6 +284,7 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "64")]
+    #[cfg(feature = "slicable")]
     fn long_str_slice_downgrade() {
         let slice = StrView::from("helloworld_thisisalongstring");
 
@@ -307,6 +312,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn short_str_slice_full() {
         let slice = StrView::from("abcdef");
         let copy = slice.slice(..);
@@ -317,6 +323,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn short_str_slice_part() {
         let slice = StrView::from("abcdef");
         let copy = slice.slice(3..);
@@ -326,6 +333,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "slicable")]
     fn short_str_slice_empty() {
         let slice = StrView::from("abcdef");
         let copy = slice.slice(0..0);
