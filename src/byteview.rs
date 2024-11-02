@@ -185,6 +185,35 @@ impl std::hash::Hash for ByteView {
     }
 }
 
+/// RAII guard for [`ByteView::get_mut`], so the prefix gets
+/// updated properly when the mutation is done
+pub struct Mutator<'a>(&'a mut ByteView);
+
+impl<'a> std::ops::Deref for Mutator<'a> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a> std::ops::DerefMut for Mutator<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let slice = unsafe {
+            let ptr: &[u8] = &*self.0;
+            let ptr = ptr.as_ptr().cast_mut();
+            std::slice::from_raw_parts_mut(ptr, self.len())
+        };
+        slice
+    }
+}
+
+impl<'a> Drop for Mutator<'a> {
+    fn drop(&mut self) {
+        self.0.update_prefix();
+    }
+}
+
 impl ByteView {
     fn prefix(&self) -> &[u8] {
         let len = PREFIX_SIZE.min(self.len());
@@ -197,6 +226,86 @@ impl ByteView {
         self.len() <= INLINE_SIZE
     }
 
+    fn update_prefix(&mut self) {
+        if !self.is_inline() {
+            unsafe {
+                let slice_ptr: &[u8] = &*self;
+                let slice_ptr = slice_ptr.as_ptr();
+
+                // Zero out prefix
+                (*self.trailer.long).prefix[0] = 0;
+                (*self.trailer.long).prefix[1] = 0;
+                (*self.trailer.long).prefix[2] = 0;
+                (*self.trailer.long).prefix[3] = 0;
+
+                let prefix = (*self.trailer.long).prefix.as_mut_ptr();
+                std::ptr::copy_nonoverlapping(slice_ptr, prefix, self.len().min(4));
+            }
+        }
+    }
+
+    /// Returns a mutable reference into the given Byteview, if there are no other pointers to the same allocation.
+    pub fn get_mut(&mut self) -> Option<Mutator<'_>> {
+        if self.ref_count() == 1 {
+            Some(Mutator(self))
+        } else {
+            None
+        }
+    }
+
+    /// Creates a new zeroed, fixed-length byteview.
+    ///
+    /// Use [`ByteView::get_mut`] to mutate the content.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length does not fit in a u32 (4 GiB).
+    #[must_use]
+    pub fn with_size(slice_len: usize) -> Self {
+        let Ok(len) = u32::try_from(slice_len) else {
+            panic!("byte slice too long");
+        };
+
+        let mut builder = Self {
+            trailer: Trailer {
+                short: ManuallyDrop::new(ShortRepr {
+                    len,
+                    data: [0; INLINE_SIZE],
+                }),
+            },
+        };
+
+        if !builder.is_inline() {
+            unsafe {
+                let header_size = std::mem::size_of::<HeapAllocationHeader>();
+                let alignment = std::mem::align_of::<HeapAllocationHeader>();
+                let total_size = header_size + slice_len;
+                let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
+
+                let heap_ptr = std::alloc::alloc(layout);
+                if heap_ptr.is_null() {
+                    std::alloc::handle_alloc_error(layout);
+                }
+
+                // SAFETY: We store a pointer to the copied slice, which comes directly after the header
+                (*builder.trailer.long).data =
+                    heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
+
+                // Set pointer to heap allocation address
+                (*builder.trailer.long).heap = heap_ptr;
+
+                // Set ref count
+                let heap_region = heap_ptr as *const HeapAllocationHeader;
+                let heap_region = &*heap_region;
+                heap_region.ref_count.store(1, Ordering::Release);
+            }
+        }
+
+        debug_assert_eq!(1, builder.ref_count());
+
+        builder
+    }
+
     /// Creates a new slice from an existing byte slice.
     ///
     /// Will heap-allocate the slice if it has at least length 13.
@@ -207,6 +316,36 @@ impl ByteView {
     #[must_use]
     pub fn new(slice: &[u8]) -> Self {
         let slice_len = slice.len();
+
+        let mut view = Self::with_size(slice_len);
+
+        if view.is_inline() {
+            // SAFETY: We check for inlinability
+            // so we know the the input slice fits our buffer
+            unsafe {
+                let base_ptr = std::ptr::addr_of_mut!(view) as *mut u8;
+                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, slice_len);
+            }
+        } else {
+            unsafe {
+                // Copy prefix
+                (*view.trailer.long)
+                    .prefix
+                    .copy_from_slice(&slice[0..PREFIX_SIZE]);
+
+                // Copy byte slice into heap allocation
+                std::ptr::copy_nonoverlapping(
+                    slice.as_ptr(),
+                    (*view.trailer.long).data.cast_mut(),
+                    slice_len,
+                );
+            }
+        }
+
+        view
+
+        /*   let slice_len = slice.len();
 
         let Ok(len) = u32::try_from(slice_len) else {
             panic!("byte slice too long");
@@ -270,7 +409,7 @@ impl ByteView {
         debug_assert_eq!(1, builder.ref_count());
         debug_assert_eq!(builder.len(), slice.len());
 
-        builder
+        builder */
     }
 
     fn get_heap_region(&self) -> &HeapAllocationHeader {
@@ -624,6 +763,50 @@ mod tests {
         let a = ByteView::from("abcdef");
         let b = ByteView::from("abcdefhelloworldhelloworld");
         assert!(a < b);
+    }
+
+    #[test]
+    fn get_mut() {
+        let mut slice = ByteView::with_size(4);
+        assert_eq!(4, slice.len());
+        assert_eq!([0, 0, 0, 0], &*slice);
+
+        {
+            let mut mutator = slice.get_mut().unwrap();
+            mutator[0] = 1;
+            mutator[1] = 2;
+            mutator[2] = 3;
+            mutator[3] = 4;
+        }
+
+        assert_eq!(4, slice.len());
+        assert_eq!([1, 2, 3, 4], &*slice);
+        assert_eq!([1, 2, 3, 4], slice.prefix());
+    }
+
+    #[test]
+    fn get_mut_long() {
+        let mut slice = ByteView::with_size(30);
+        assert_eq!(30, slice.len());
+        assert_eq!([0; 30], &*slice);
+
+        {
+            let mut mutator = slice.get_mut().unwrap();
+            mutator[0] = 1;
+            mutator[1] = 2;
+            mutator[2] = 3;
+            mutator[3] = 4;
+        }
+
+        assert_eq!(30, slice.len());
+        assert_eq!(
+            [
+                1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0
+            ],
+            &*slice
+        );
+        assert_eq!([1, 2, 3, 4], slice.prefix());
     }
 
     #[test]
