@@ -200,7 +200,7 @@ impl<'a> std::ops::Deref for Mutator<'a> {
 impl<'a> std::ops::DerefMut for Mutator<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let slice = unsafe {
-            let ptr: &[u8] = &*self.0;
+            let ptr: &[u8] = self.0;
             let ptr = ptr.as_ptr().cast_mut();
             std::slice::from_raw_parts_mut(ptr, self.len())
         };
