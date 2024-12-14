@@ -187,7 +187,7 @@ impl std::hash::Hash for ByteView {
 
 /// RAII guard for [`ByteView::get_mut`], so the prefix gets
 /// updated properly when the mutation is done
-pub struct Mutator<'a>(&'a mut ByteView);
+pub struct Mutator<'a>(pub(crate) &'a mut ByteView);
 
 impl<'a> std::ops::Deref for Mutator<'a> {
     type Target = [u8];
@@ -251,6 +251,21 @@ impl ByteView {
         } else {
             None
         }
+    }
+
+    /// Creates a slice and populates it with  `len` bytes
+    /// from the given reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an I/O exception occurred.
+    pub fn from_reader<R: std::io::Read>(reader: &mut R, len: usize) -> std::io::Result<Self> {
+        let mut s = Self::with_size(len);
+        {
+            let mut mutator = Mutator(&mut s);
+            reader.read_exact(&mut mutator)?;
+        }
+        Ok(s)
     }
 
     /// Creates a new zeroed, fixed-length byteview.
@@ -344,72 +359,6 @@ impl ByteView {
         }
 
         view
-
-        /*   let slice_len = slice.len();
-
-        let Ok(len) = u32::try_from(slice_len) else {
-            panic!("byte slice too long");
-        };
-
-        let mut builder = Self {
-            trailer: Trailer {
-                short: ManuallyDrop::new(ShortRepr {
-                    len,
-                    data: [0; INLINE_SIZE],
-                }),
-            },
-        };
-
-        if builder.is_inline() {
-            // SAFETY: We check for inlinability
-            // so we know the the input slice fits our buffer
-            unsafe {
-                let base_ptr = std::ptr::addr_of_mut!(builder) as *mut u8;
-                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, slice_len);
-            }
-        } else {
-            unsafe {
-                (*builder.trailer.long)
-                    .prefix
-                    .copy_from_slice(&slice[0..PREFIX_SIZE]);
-
-                let header_size = std::mem::size_of::<HeapAllocationHeader>();
-                let alignment = std::mem::align_of::<HeapAllocationHeader>();
-                let total_size = header_size + slice_len;
-                let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
-
-                let heap_ptr = std::alloc::alloc(layout);
-                if heap_ptr.is_null() {
-                    std::alloc::handle_alloc_error(layout);
-                }
-
-                // SAFETY: We store a pointer to the copied slice, which comes directly after the header
-                (*builder.trailer.long).data =
-                    heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
-
-                // Copy byte slice into heap allocation
-                std::ptr::copy_nonoverlapping(
-                    slice.as_ptr(),
-                    (*builder.trailer.long).data.cast_mut(),
-                    slice_len,
-                );
-
-                // Set pointer to heap allocation address
-                (*builder.trailer.long).heap = heap_ptr;
-
-                // Set ref count
-                let heap_region = heap_ptr as *const HeapAllocationHeader;
-                let heap_region = &*heap_region;
-                heap_region.ref_count.store(1, Ordering::Release);
-            }
-        }
-
-        debug_assert_eq!(slice, &*builder);
-        debug_assert_eq!(1, builder.ref_count());
-        debug_assert_eq!(builder.len(), slice.len());
-
-        builder */
     }
 
     fn get_heap_region(&self) -> &HeapAllocationHeader {
@@ -736,6 +685,7 @@ mod serde {
 #[cfg(test)]
 mod tests {
     use super::{ByteView, HeapAllocationHeader};
+    use std::io::Cursor;
 
     #[test]
     #[cfg(target_pointer_width = "64")]
@@ -756,6 +706,17 @@ mod tests {
             32,
             std::mem::size_of::<ByteView>() + std::mem::size_of::<HeapAllocationHeader>()
         );
+    }
+
+    #[test]
+    fn from_reader_1() -> std::io::Result<()> {
+        let str = b"abcdef";
+        let mut cursor = Cursor::new(str);
+
+        let a = ByteView::from_reader(&mut cursor, 6)?;
+        assert!(&*a == b"abcdef");
+
+        Ok(())
     }
 
     #[test]

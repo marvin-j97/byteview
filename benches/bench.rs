@@ -1,6 +1,9 @@
 use byteview::ByteView;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use std::time::Duration;
+use std::{
+    io::{Cursor, Read},
+    time::Duration,
+};
 
 fn cmp_short(c: &mut Criterion) {
     let mut group = c.benchmark_group("cmp short");
@@ -198,22 +201,99 @@ fn eq_long(c: &mut Criterion) {
     }
 }
 
-fn ctor(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ctor long");
+fn ctor_short(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ctor short");
+
+    let value = b"abcdefabcdef";
 
     group.bench_function("Arc'd slice", |b| {
         b.iter(|| {
-            let _x: std::sync::Arc<[u8]> =
-                std::sync::Arc::from(nanoid::nanoid!().clone().as_bytes());
+            let _x = std::sync::Arc::from(value);
         });
     });
 
     group.bench_function("ByteView", |b| {
         b.iter(|| {
-            let _x = ByteView::from(nanoid::nanoid!());
+            let _x = ByteView::from(*value);
         });
     });
 }
 
-criterion_group!(benches, eq_short, eq_long, cmp_short, cmp_long, ctor);
+fn ctor_long(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ctor ctor_long");
+
+    let value = b"abcdefabcdefabcdefabcdefabcdefabcdef";
+
+    group.bench_function("Arc'd slice", |b| {
+        b.iter(|| {
+            let _x = std::sync::Arc::from(value);
+        });
+    });
+
+    group.bench_function("ByteView", |b| {
+        b.iter(|| {
+            let _x = ByteView::from(*value);
+        });
+    });
+}
+
+// Simulates `lsm-tree`-like deserializing of KV values
+fn ctor_from_reader(c: &mut Criterion) {
+    use std::sync::Arc;
+
+    let mut group = c.benchmark_group("ctor long from reader");
+
+    let value = b"abcdefabcdefabcdefabcdefabcdefabcdef";
+
+    group.bench_function("Arc'd slice", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(value);
+            let mut v = vec![0; value.len()];
+            c.read_exact(&mut v).unwrap();
+            let _x: Arc<[u8]> = v.into();
+        });
+    });
+
+    group.bench_function("Arc'd slice - preallocated", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(value);
+
+            let v = vec![0; value.len()];
+            let mut v: Arc<[u8]> = v.into();
+
+            let builder = Arc::get_mut(&mut v).unwrap();
+            c.read_exact(builder).unwrap();
+        });
+    });
+
+    group.bench_function("ByteView::with_size", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(value);
+
+            let mut x = ByteView::with_size(value.len());
+            {
+                let mut builder = x.get_mut().unwrap();
+                c.read_exact(&mut builder).unwrap();
+            }
+        });
+    });
+
+    group.bench_function("ByteView::from_reader", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(value);
+            let _x = ByteView::from_reader(&mut c, value.len()).unwrap();
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    ctor_short,
+    ctor_long,
+    ctor_from_reader,
+    eq_short,
+    eq_long,
+    cmp_short,
+    cmp_long,
+);
 criterion_main!(benches);

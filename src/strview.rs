@@ -1,4 +1,4 @@
-use crate::ByteView;
+use crate::{byteview::Mutator, ByteView};
 use std::{ops::Deref, sync::Arc};
 
 /// An immutable, UTF-8–encoded string slice
@@ -45,6 +45,21 @@ impl StrView {
     #[must_use]
     pub fn new(s: &str) -> Self {
         Self(ByteView::new(s.as_bytes()))
+    }
+
+    /// Creates a new string and populates it with `len` bytes
+    /// from the given reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an I/O exception occurred.
+    pub fn from_reader<R: std::io::Read>(reader: &mut R, len: usize) -> std::io::Result<Self> {
+        let mut s = ByteView::with_size(len);
+        {
+            let mut mutator = Mutator(&mut s);
+            reader.read_exact(&mut mutator)?;
+        }
+        Ok(Self(s))
     }
 
     /// Clones the contents of this string into a string.
@@ -176,6 +191,18 @@ mod serde {
 #[cfg(test)]
 mod tests {
     use super::StrView;
+    use std::io::Cursor;
+
+    #[test]
+    fn from_reader_1() -> std::io::Result<()> {
+        let str = "abcdef";
+        let mut cursor = Cursor::new(str);
+
+        let a = StrView::from_reader(&mut cursor, 6)?;
+        assert!(&*a == "abcdef");
+
+        Ok(())
+    }
 
     #[test]
     fn cmp_misc_1() {

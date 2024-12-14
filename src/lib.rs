@@ -43,7 +43,8 @@
     clippy::nursery,
     clippy::expect_used,
     clippy::unwrap_used,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    clippy::needless_lifetimes
 )]
 
 mod byteview;
