@@ -297,7 +297,8 @@ impl ByteView {
                 let total_size = header_size + slice_len;
                 let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
 
-                let heap_ptr = std::alloc::alloc(layout);
+                // IMPORTANT: Zero-allocate the region
+                let heap_ptr = std::alloc::alloc_zeroed(layout);
                 if heap_ptr.is_null() {
                     std::alloc::handle_alloc_error(layout);
                 }
