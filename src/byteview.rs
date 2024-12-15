@@ -283,7 +283,6 @@ impl ByteView {
         Self::with_size_zeroed(slice_len)
     }
 
-    #[must_use]
     fn with_size_zeroed(slice_len: usize) -> Self {
         let Ok(len) = u32::try_from(slice_len) else {
             panic!("byte slice too long");
@@ -330,7 +329,6 @@ impl ByteView {
         builder
     }
 
-    #[must_use]
     fn with_size_unchecked(slice_len: usize) -> Self {
         let Ok(len) = u32::try_from(slice_len) else {
             panic!("byte slice too long");
