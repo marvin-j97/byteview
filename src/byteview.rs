@@ -262,8 +262,8 @@ impl ByteView {
     pub fn from_reader<R: std::io::Read>(reader: &mut R, len: usize) -> std::io::Result<Self> {
         let mut s = Self::with_size(len);
         {
-            let mut mutator = Mutator(&mut s);
-            reader.read_exact(&mut mutator)?;
+            let mut builder = Mutator(&mut s);
+            reader.read_exact(&mut builder)?;
         }
         Ok(s)
     }
