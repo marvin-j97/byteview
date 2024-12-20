@@ -47,19 +47,15 @@ impl StrView {
         Self(ByteView::new(s.as_bytes()))
     }
 
+    // TODO: validate UTF-8?, and add unsafe _unchecked method?
     /// Creates a new string and populates it with `len` bytes
     /// from the given reader.
     ///
     /// # Errors
     ///
-    /// Returns an error if an I/O exception occurred.
+    /// Returns an error if an I/O error occurred.
     pub fn from_reader<R: std::io::Read>(reader: &mut R, len: usize) -> std::io::Result<Self> {
-        let mut s = ByteView::with_size(len);
-        {
-            let mut mutator = Mutator(&mut s);
-            reader.read_exact(&mut mutator)?;
-        }
-        Ok(Self(s))
+        ByteView::from_reader(reader, len).map(Self)
     }
 
     /// Clones the contents of this string into a string.

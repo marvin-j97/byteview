@@ -258,7 +258,7 @@ impl ByteView {
     ///
     /// # Errors
     ///
-    /// Returns an error if an I/O exception occurred.
+    /// Returns an error if an I/O error occurred.
     pub fn from_reader<R: std::io::Read>(reader: &mut R, len: usize) -> std::io::Result<Self> {
         // NOTE: We can use _unchecked to skip zeroing of the heap allocated slice
         // because we receive the `len` parameter
