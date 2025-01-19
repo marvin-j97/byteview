@@ -4,7 +4,7 @@
 [![CI](https://github.com/marvin-j97/byteview/actions/workflows/miri.yml/badge.svg)](https://github.com/marvin-j97/byteview/actions/workflows/miri.yml)
 [![docs.rs](https://img.shields.io/docsrs/byteview?color=green)](https://docs.rs/byteview)
 [![Crates.io](https://img.shields.io/crates/v/byteview?color=blue)](https://crates.io/crates/byteview)
-![MSRV](https://img.shields.io/badge/MSRV-1.65-blue)
+![MSRV](https://img.shields.io/badge/MSRV-1.74-blue)
 
 An immutable byte slice that may be inlined, and can be partially cloned without heap allocation.
 
