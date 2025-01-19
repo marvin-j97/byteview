@@ -1,4 +1,8 @@
-use crate::{byteview::Mutator, ByteView};
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
+use crate::ByteView;
 use std::{ops::Deref, sync::Arc};
 
 /// An immutable, UTF-8–encoded string slice
@@ -47,21 +51,11 @@ impl StrView {
         Self(ByteView::new(s.as_bytes()))
     }
 
-    // TODO: validate UTF-8?, and add unsafe _unchecked method?
-    /// Creates a new string and populates it with `len` bytes
-    /// from the given reader.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if an I/O error occurred.
-    pub fn from_reader<R: std::io::Read>(reader: &mut R, len: usize) -> std::io::Result<Self> {
-        ByteView::from_reader(reader, len).map(Self)
-    }
-
-    /// Clones the contents of this string into a string.
+    #[doc(hidden)]
     #[must_use]
-    pub fn to_owned(&self) -> String {
-        self.deref().to_owned()
+    #[allow(clippy::missing_const_for_fn)]
+    pub unsafe fn from_raw(view: ByteView) -> Self {
+        Self(view)
     }
 
     /// Clones the contents of this string into an independently tracked string.
@@ -187,18 +181,6 @@ mod serde {
 #[cfg(test)]
 mod tests {
     use super::StrView;
-    use std::io::Cursor;
-
-    #[test]
-    fn from_reader_1() -> std::io::Result<()> {
-        let str = "abcdef";
-        let mut cursor = Cursor::new(str);
-
-        let a = StrView::from_reader(&mut cursor, 6)?;
-        assert!(&*a == "abcdef");
-
-        Ok(())
-    }
 
     #[test]
     fn cmp_misc_1() {

@@ -1,8 +1,14 @@
+// Copyright (c) 2024-present, fjall-rs
+// This source code is licensed under both the Apache 2.0 and MIT License
+// (found in the LICENSE-* files in the repository)
+
 use std::{
     mem::ManuallyDrop,
     ops::Deref,
-    sync::Arc,
-    sync::{atomic::AtomicU64, atomic::Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 #[cfg(target_pointer_width = "64")]
@@ -17,8 +23,6 @@ const PREFIX_SIZE: usize = 4;
 struct HeapAllocationHeader {
     ref_count: AtomicU64,
 }
-
-// TODO: track allocations somehow in tests
 
 #[repr(C)]
 struct ShortRepr {
@@ -189,7 +193,7 @@ impl std::hash::Hash for ByteView {
 /// updated properly when the mutation is done
 pub struct Mutator<'a>(pub(crate) &'a mut ByteView);
 
-impl<'a> std::ops::Deref for Mutator<'a> {
+impl std::ops::Deref for Mutator<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -197,18 +201,13 @@ impl<'a> std::ops::Deref for Mutator<'a> {
     }
 }
 
-impl<'a> std::ops::DerefMut for Mutator<'a> {
+impl std::ops::DerefMut for Mutator<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let slice = unsafe {
-            let ptr: &[u8] = self.0;
-            let ptr = ptr.as_ptr().cast_mut();
-            std::slice::from_raw_parts_mut(ptr, self.len())
-        };
-        slice
+        self.0.get_mut_slice()
     }
 }
 
-impl<'a> Drop for Mutator<'a> {
+impl Drop for Mutator<'_> {
     fn drop(&mut self) {
         self.0.update_prefix();
     }
@@ -598,6 +597,20 @@ impl ByteView {
     #[must_use]
     pub fn len(&self) -> usize {
         unsafe { self.trailer.short.len as usize }
+    }
+
+    fn get_mut_slice(&mut self) -> &mut [u8] {
+        let len = self.len();
+
+        if self.is_inline() {
+            unsafe {
+                let base_ptr = (self as *mut Self).cast::<u8>();
+                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
+                std::slice::from_raw_parts_mut(prefix_offset, len)
+            }
+        } else {
+            unsafe { std::slice::from_raw_parts_mut(self.trailer.long.data.cast_mut(), len) }
+        }
     }
 
     fn get_short_slice(&self) -> &[u8] {
