@@ -8,7 +8,6 @@ use libfuzzer_sys::{
 fuzz_target!(|data: &[u8]| {
     let mut unstructured = Unstructured::new(data);
 
-    // Generate two different fuzzed inputs
     if let (Ok(input1), Ok(input2)) = (
         <Vec<u8> as Arbitrary>::arbitrary(&mut unstructured),
         <Vec<u8> as Arbitrary>::arbitrary(&mut unstructured),
@@ -23,6 +22,11 @@ fuzz_target!(|data: &[u8]| {
         assert_eq!(input1.len(), a.len());
         assert_eq!(input2.len(), b.len());
         assert_eq!(input1.starts_with(&input2), a.starts_with(&b));
+
+        {
+            let c = ByteView::from_reader(&mut &*input1, input1.len()).unwrap();
+            assert_eq!(input1, &*c);
+        }
 
         let a_c = a.clone();
         assert_eq!(a, a_c);
