@@ -4,11 +4,16 @@
 [![CI](https://github.com/marvin-j97/byteview/actions/workflows/miri.yml/badge.svg)](https://github.com/marvin-j97/byteview/actions/workflows/miri.yml)
 [![docs.rs](https://img.shields.io/docsrs/byteview?color=green)](https://docs.rs/byteview)
 [![Crates.io](https://img.shields.io/crates/v/byteview?color=blue)](https://crates.io/crates/byteview)
-![MSRV](https://img.shields.io/badge/MSRV-1.74.0-blue)
+![MSRV](https://img.shields.io/badge/MSRV-1.65-blue)
 
 An immutable byte slice that may be inlined, and can be partially cloned without heap allocation.
 
 ![Memory layout](./byteview.png)
+
+`byteview` was designed to speed up deserialization in `lsm-tree`, allow inlining of small values and reduce memory usage compared to Arc'd slices.
+Values with a known length can be constructed 2-2.5x faster than using Arcs:
+
+![Constructor benchmark](ctor_bench.png)
 
 ## Memory usage
 
