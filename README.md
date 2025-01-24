@@ -8,6 +8,8 @@
 
 An immutable byte slice that may be inlined, and can be partially cloned without heap allocation.
 
+Think of it as a specialized `Arc<[u8]>` that can be inlined (skip allocation for small values) and no weak count.
+
 ![Memory layout](./byteview.png)
 
 `byteview` was designed to speed up deserialization in `lsm-tree`, allow inlining of small values and reduce memory usage compared to Arc'd slices.
