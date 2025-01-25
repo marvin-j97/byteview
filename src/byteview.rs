@@ -391,9 +391,8 @@ impl ByteView {
             // SAFETY: We check for inlinability
             // so we know the the input slice fits our buffer
             unsafe {
-                let base_ptr = std::ptr::addr_of_mut!(view) as *mut u8;
-                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, slice_len);
+                let data_ptr = std::ptr::addr_of_mut!((*view.trailer.short).data) as *mut u8;
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), data_ptr, slice_len);
             }
         } else {
             unsafe {
