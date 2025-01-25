@@ -51,3 +51,6 @@ mod byteview;
 mod strview;
 
 pub use {byteview::ByteView, strview::StrView};
+
+#[doc(hidden)]
+pub use byteview::Mutator;
