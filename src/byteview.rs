@@ -385,7 +385,7 @@ impl ByteView {
     pub fn new(slice: &[u8]) -> Self {
         let slice_len = slice.len();
 
-        let mut view = Self::with_size(slice_len);
+        let mut view = Self::with_size_unchecked(slice_len);
 
         if view.is_inline() {
             // SAFETY: We check for inlinability
