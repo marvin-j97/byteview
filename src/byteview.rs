@@ -501,8 +501,8 @@ impl ByteView {
         // Target and destination slices are inlined
         // so we just need to memcpy the struct, and replace
         // the inline slice with the requested range
-        if new_len <= INLINE_SIZE && self_len <= INLINE_SIZE {
-            let mut cloned = Self {
+        if new_len <= INLINE_SIZE {
+            let mut child = Self {
                 trailer: Trailer {
                     short: ManuallyDrop::new(ShortRepr {
                         len,
@@ -511,42 +511,22 @@ impl ByteView {
                 },
             };
 
-            let slice = &self.get_short_slice()[begin..end];
+            let slice = &self[begin..end];
             debug_assert_eq!(slice.len(), new_len);
 
-            unsafe {
-                let base_ptr = std::ptr::addr_of_mut!(cloned) as *mut u8;
-                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, new_len);
-            }
-
-            cloned
-        } else if new_len <= INLINE_SIZE && self_len > INLINE_SIZE {
-            let mut cloned = Self {
-                trailer: Trailer {
-                    short: ManuallyDrop::new(ShortRepr {
-                        len,
-                        data: [0; INLINE_SIZE],
-                    }),
-                },
-            };
-
-            let slice = &self.get_long_slice()[begin..end];
-            debug_assert_eq!(slice.len(), new_len);
+            let data_ptr = unsafe { &mut (*child.trailer.short).data };
 
             unsafe {
-                let base_ptr = std::ptr::addr_of_mut!(cloned) as *mut u8;
-                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), prefix_offset, new_len);
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), data_ptr.as_mut_ptr(), new_len);
             }
 
-            cloned
-        } else if new_len > INLINE_SIZE && self_len > INLINE_SIZE {
+            child
+        } else {
+            // IMPORTANT: Increase ref count
             let heap_region = self.get_heap_region();
-            let rc_before = heap_region.ref_count.fetch_add(1, Ordering::Release);
-            debug_assert!(rc_before < u64::MAX, "refcount overflow");
+            heap_region.ref_count.fetch_add(1, Ordering::Release);
 
-            let mut cloned = Self {
+            let mut child = Self {
                 // SAFETY: self.data must be defined
                 // we cannot get a range larger than our own slice
                 // so we cannot be inlined while the requested slice is not inlinable
@@ -560,15 +540,14 @@ impl ByteView {
                 },
             };
 
-            let prefix = &self.get_long_slice()[begin..(begin + 4)];
+            let prefix = &self[begin..(begin + 4)];
             debug_assert_eq!(prefix.len(), 4);
+
             unsafe {
-                (*cloned.trailer.long).prefix.copy_from_slice(prefix);
+                (*child.trailer.long).prefix.copy_from_slice(prefix);
             }
 
-            cloned
-        } else {
-            unreachable!()
+            child
         }
     }
 
