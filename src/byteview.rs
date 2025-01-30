@@ -604,11 +604,7 @@ impl ByteView {
         let len = self.len();
 
         if self.is_inline() {
-            unsafe {
-                let base_ptr = (self as *mut Self).cast::<u8>();
-                let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
-                std::slice::from_raw_parts_mut(prefix_offset, len)
-            }
+            unsafe { std::slice::from_raw_parts_mut((*self.trailer.short).data.as_mut_ptr(), len) }
         } else {
             unsafe { std::slice::from_raw_parts_mut(self.trailer.long.data.cast_mut(), len) }
         }
@@ -623,11 +619,7 @@ impl ByteView {
         );
 
         // SAFETY: Shall only be called if slice is inlined
-        unsafe {
-            let base_ptr = (self as *const Self).cast::<u8>();
-            let prefix_offset = base_ptr.add(std::mem::size_of::<u32>());
-            std::slice::from_raw_parts(prefix_offset, len)
-        }
+        unsafe { std::slice::from_raw_parts((*self.trailer.short).data.as_ptr(), len) }
     }
 
     fn get_long_slice(&self) -> &[u8] {
