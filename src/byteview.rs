@@ -754,6 +754,49 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
+    #[cfg(not(miri))]
+    fn test_rykv() {
+        use rkyv::{rancor::Error, Archive, Deserialize, Serialize};
+
+        #[derive(Debug, Archive, Deserialize, Serialize, PartialEq)]
+        #[rkyv(archived = ArchivedPerson)]
+        struct Person {
+            id: i64,
+            name: String,
+        }
+
+        // NOTE: Short Repr
+        {
+            let a = Person {
+                id: 1,
+                name: "Alicia".to_string(),
+            };
+
+            let bytes = rkyv::to_bytes::<Error>(&a).unwrap();
+            let bytes = ByteView::from(&*bytes);
+
+            let archived: &ArchivedPerson = rkyv::access::<_, Error>(&bytes).unwrap();
+            assert_eq!(archived.id, a.id);
+            assert_eq!(archived.name, a.name);
+        }
+
+        // NOTE: Long Repr
+        {
+            let a = Person {
+                id: 1,
+                name: "Alicia I need a very long string for heap allocation".to_string(),
+            };
+
+            let bytes = rkyv::to_bytes::<Error>(&a).unwrap();
+            let bytes = ByteView::from(&*bytes);
+
+            let archived: &ArchivedPerson = rkyv::access::<_, Error>(&bytes).unwrap();
+            assert_eq!(archived.id, a.id);
+            assert_eq!(archived.name, a.name);
+        }
+    }
+
+    #[test]
     #[cfg(target_pointer_width = "64")]
     fn memsize() {
         use crate::byteview::{LongRepr, ShortRepr, Trailer};

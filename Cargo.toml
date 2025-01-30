@@ -24,6 +24,7 @@ serde = { version = "1.0.208", optional = true }
 criterion = { version = "0.5", features = ["html_reports"] }
 nanoid = "0.4.0"
 rand = "0.8.5"
+rkyv = { version = "0.8.10", features = ["bytecheck", "unaligned"] }
 
 [[bench]]
 name = "bench"
