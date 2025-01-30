@@ -63,6 +63,8 @@ impl Default for Trailer {
 /// A single heap allocation will be shared between multiple slices.
 /// Even subslices of that heap allocation can be cloned without additional heap allocation.
 ///
+/// [`ByteView`] does not guarantee any sort of alignment for zero-copy (de)serialization.
+///
 /// The design is very similar to:
 ///
 /// - [Polars' strings](<https://pola.rs/posts/polars-string-type>)
