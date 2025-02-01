@@ -398,17 +398,13 @@ impl ByteView {
             }
         } else {
             unsafe {
+                let long_repr = &mut *view.trailer.long;
+
                 // Copy prefix
-                (*view.trailer.long)
-                    .prefix
-                    .copy_from_slice(&slice[0..PREFIX_SIZE]);
+                long_repr.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
 
                 // Copy byte slice into heap allocation
-                std::ptr::copy_nonoverlapping(
-                    slice.as_ptr(),
-                    (*view.trailer.long).data.cast_mut(),
-                    slice_len,
-                );
+                std::ptr::copy_nonoverlapping(slice.as_ptr(), long_repr.data.cast_mut(), slice_len);
             }
         }
 

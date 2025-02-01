@@ -202,7 +202,7 @@ fn eq_long(c: &mut Criterion) {
 }
 
 fn ctor_short(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ctor short");
+    let mut group = c.benchmark_group("ctor_short");
 
     let value = b"abcdefabcdef";
 
@@ -220,7 +220,7 @@ fn ctor_short(c: &mut Criterion) {
 }
 
 fn ctor_long(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ctor ctor_long");
+    let mut group = c.benchmark_group("ctor_long");
 
     let value = b"abcdefabcdefabcdefabcdefabcdefabcdef";
 
@@ -241,7 +241,7 @@ fn ctor_long(c: &mut Criterion) {
 fn ctor_from_reader(c: &mut Criterion) {
     use std::sync::Arc;
 
-    let mut group = c.benchmark_group("ctor long from reader");
+    let mut group = c.benchmark_group("ctor_long from reader");
 
     let value = b"abcdefabcdefabcdefabcdefabcdefabcdef";
 
@@ -286,11 +286,61 @@ fn ctor_from_reader(c: &mut Criterion) {
     });
 }
 
+// Simulates `value-log`-like deserializing of blobs
+fn ctor_from_reader_blob(c: &mut Criterion) {
+    use std::sync::Arc;
+
+    let mut group = c.benchmark_group("ctor_blob from reader");
+
+    let value = b"abcdefabcdefabcdefabcdefabcdefabcdef".repeat(1_000);
+
+    group.bench_function("Arc'd slice", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value);
+            let mut v = vec![0; value.len()];
+            c.read_exact(&mut v).unwrap();
+            let _x: Arc<[u8]> = v.into();
+        });
+    });
+
+    group.bench_function("Arc'd slice - preallocated", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value);
+
+            let v = vec![0; value.len()];
+            let mut v: Arc<[u8]> = v.into();
+
+            let builder = Arc::get_mut(&mut v).unwrap();
+            c.read_exact(builder).unwrap();
+        });
+    });
+
+    group.bench_function("ByteView::with_size", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value);
+
+            let mut x = ByteView::with_size(value.len());
+            {
+                let mut builder = x.get_mut().unwrap();
+                c.read_exact(&mut builder).unwrap();
+            }
+        });
+    });
+
+    group.bench_function("ByteView::from_reader", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value);
+            let _x = ByteView::from_reader(&mut c, value.len()).unwrap();
+        });
+    });
+}
+
 criterion_group!(
     benches,
     ctor_short,
     ctor_long,
     ctor_from_reader,
+    ctor_from_reader_blob,
     eq_short,
     eq_long,
     cmp_short,
