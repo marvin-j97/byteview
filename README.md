@@ -12,7 +12,7 @@ Think of it as a specialized `Arc<[u8]>` that can be inlined (skip allocation fo
 
 ![Memory layout](./byteview.png)
 
-`byteview` was designed to speed up deserialization in `lsm-tree`, allow inlining of small values and reduce memory usage compared to Arc'd slices.
+`byteview` was designed to speed up deserialization in [`lsm-tree`](https://github.com/fjall-rs/lsm-tree), allow inlining of small values and reduce memory usage compared to Arc'd slices.
 Values with a known length can be constructed 2-2.5x faster than using Arcs:
 
 ![Constructor benchmark](ctor_bench.png)
