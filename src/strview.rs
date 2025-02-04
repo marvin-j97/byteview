@@ -15,7 +15,7 @@ use std::{ops::Deref, sync::Arc};
 ///
 /// Uses [`ByteView`] internally, but derefs as [`&str`].
 #[repr(C)]
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, std::hash::Hash)]
 pub struct StrView(ByteView);
 
 #[allow(clippy::non_send_fields_in_send_ty)]
