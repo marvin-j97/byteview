@@ -144,20 +144,9 @@ impl std::cmp::PartialEq for ByteView {
 
 impl std::cmp::Ord for ByteView {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.prefix().cmp(other.prefix()).then_with(|| {
-            let this_len = self.len();
-            let other_len = other.len();
-
-            if this_len <= 4 && other_len <= 4 {
-                this_len.cmp(&other_len)
-            } else if self.is_inline() && other.is_inline() {
-                let a = self.get_short_slice();
-                let b = other.get_short_slice();
-                a.cmp(b)
-            } else {
-                self.deref().cmp(&**other)
-            }
-        })
+        self.prefix()
+            .cmp(other.prefix())
+            .then_with(|| self.deref().cmp(&**other))
     }
 }
 
