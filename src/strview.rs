@@ -23,6 +23,12 @@ unsafe impl Send for StrView {}
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Sync for StrView {}
 
+impl std::fmt::Display for StrView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &**self)
+    }
+}
+
 impl std::fmt::Debug for StrView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", &**self)
