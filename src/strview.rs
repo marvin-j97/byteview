@@ -15,7 +15,7 @@ use std::{ops::Deref, sync::Arc};
 ///
 /// Uses [`ByteView`] internally, but derefs as [`&str`].
 #[repr(C)]
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, std::hash::Hash)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StrView(ByteView);
 
 #[allow(clippy::non_send_fields_in_send_ty)]
@@ -41,6 +41,12 @@ impl Deref for StrView {
     fn deref(&self) -> &Self::Target {
         // SAFETY: Constructor takes a &str
         unsafe { std::str::from_utf8_unchecked(&self.0) }
+    }
+}
+
+impl std::hash::Hash for StrView {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.deref().hash(state);
     }
 }
 
@@ -187,6 +193,16 @@ mod serde {
 #[cfg(test)]
 mod tests {
     use super::StrView;
+    use std::collections::HashMap;
+
+    #[test]
+    fn strview_hash() {
+        let a = StrView::from("abcdef");
+
+        let mut map = HashMap::new();
+        map.insert(a, 0);
+        assert!(map.contains_key("abcdef"));
+    }
 
     #[test]
     fn cmp_misc_1() {
