@@ -212,6 +212,12 @@ fn ctor_short(c: &mut Criterion) {
         });
     });
 
+    group.bench_function("tokio::Bytes", |b| {
+        b.iter(|| {
+            let _x = bytes::Bytes::copy_from_slice(value);
+        });
+    });
+
     group.bench_function("ByteView", |b| {
         b.iter(|| {
             let _x = ByteView::from(*value);
@@ -227,6 +233,12 @@ fn ctor_long(c: &mut Criterion) {
     group.bench_function("Arc'd slice", |b| {
         b.iter(|| {
             let _x = std::sync::Arc::from(value);
+        });
+    });
+
+    group.bench_function("tokio::Bytes", |b| {
+        b.iter(|| {
+            let _x = bytes::Bytes::copy_from_slice(value);
         });
     });
 
@@ -278,6 +290,15 @@ fn ctor_from_reader(c: &mut Criterion) {
         });
     });
 
+    group.bench_function("tokio::Bytes", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value);
+            let mut builder = bytes::BytesMut::with_capacity(value.len());
+            c.read_exact(&mut builder).unwrap();
+            let _x = builder.freeze();
+        });
+    });
+
     group.bench_function("ByteView::from_reader", |b| {
         b.iter(|| {
             let mut c = Cursor::new(value);
@@ -324,6 +345,15 @@ fn ctor_from_reader_blob(c: &mut Criterion) {
                 let mut builder = x.get_mut().unwrap();
                 c.read_exact(&mut builder).unwrap();
             }
+        });
+    });
+
+    group.bench_function("tokio::Bytes", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value);
+            let mut builder = bytes::BytesMut::with_capacity(value.len());
+            c.read_exact(&mut builder).unwrap();
+            let _x = builder.freeze();
         });
     });
 
