@@ -794,6 +794,12 @@ mod tests {
     }
 
     #[test]
+    fn empty_slice() {
+        let bytes = ByteView::with_size_zeroed(0);
+        assert_eq!(&*bytes, []);
+    }
+
+    #[test]
     fn dealloc_order() {
         let bytes = ByteView::new(&(0..32).collect::<Vec<_>>());
         let bytes_slice = bytes.slice(..31);
