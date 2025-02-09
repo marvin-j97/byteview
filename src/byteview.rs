@@ -35,7 +35,8 @@ struct LongRepr {
     len: u32,
     prefix: [u8; PREFIX_SIZE],
     heap: *const u8,
-    data: *const u8,
+    original_len: u32,
+    offset: u32,
 }
 
 #[repr(C)]
@@ -104,7 +105,7 @@ impl Drop for ByteView {
         unsafe {
             let header_size = std::mem::size_of::<HeapAllocationHeader>();
             let alignment = std::mem::align_of::<HeapAllocationHeader>();
-            let total_size = header_size + self.len();
+            let total_size = header_size + self.trailer.long.original_len as usize;
             let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
 
             let ptr = self.trailer.long.heap.cast_mut();
@@ -300,12 +301,10 @@ impl ByteView {
                     std::alloc::handle_alloc_error(layout);
                 }
 
-                // SAFETY: We store a pointer to the copied slice, which comes directly after the header
-                (*builder.trailer.long).data =
-                    heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
-
                 // Set pointer to heap allocation address
                 (*builder.trailer.long).heap = heap_ptr;
+                (*builder.trailer.long).offset = 0;
+                (*builder.trailer.long).original_len = slice_len as u32;
 
                 // Set ref count
                 let heap_region = heap_ptr as *const HeapAllocationHeader;
@@ -346,12 +345,10 @@ impl ByteView {
                     std::alloc::handle_alloc_error(layout);
                 }
 
-                // SAFETY: We store a pointer to the copied slice, which comes directly after the header
-                (*builder.trailer.long).data =
-                    heap_ptr.add(std::mem::size_of::<HeapAllocationHeader>());
-
                 // Set pointer to heap allocation address
                 (*builder.trailer.long).heap = heap_ptr;
+                (*builder.trailer.long).offset = 0;
+                (*builder.trailer.long).original_len = slice_len as u32;
 
                 // Set ref count
                 let heap_region = heap_ptr as *const HeapAllocationHeader;
@@ -386,18 +383,43 @@ impl ByteView {
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), data_ptr, slice_len);
             }
         } else {
-            unsafe {
-                let long_repr = &mut *view.trailer.long;
+            let long_repr = unsafe { &mut *view.trailer.long };
 
-                // Copy prefix
-                long_repr.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
+            // Copy prefix
+            long_repr.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
 
-                // Copy byte slice into heap allocation
-                std::ptr::copy_nonoverlapping(slice.as_ptr(), long_repr.data.cast_mut(), slice_len);
-            }
+            // Copy byte slice into heap allocation
+            view.get_mut_slice().copy_from_slice(slice);
         }
 
+        debug_assert_eq!(1, view.ref_count());
+
         view
+    }
+
+    unsafe fn data_ptr(&self) -> *const u8 {
+        const HEADER_SIZE: usize = std::mem::size_of::<HeapAllocationHeader>();
+
+        debug_assert!(!self.is_inline());
+
+        self.trailer
+            .long
+            .heap
+            .add(HEADER_SIZE)
+            .add(self.trailer.long.offset as usize)
+    }
+
+    unsafe fn data_ptr_mut(&mut self) -> *mut u8 {
+        const HEADER_SIZE: usize = std::mem::size_of::<HeapAllocationHeader>();
+
+        debug_assert!(!self.is_inline());
+
+        self.trailer
+            .long
+            .heap
+            .add(HEADER_SIZE)
+            .add(self.trailer.long.offset as usize)
+            .cast_mut()
     }
 
     fn get_heap_region(&self) -> &HeapAllocationHeader {
@@ -407,13 +429,7 @@ impl ByteView {
         );
 
         unsafe {
-            /*   // SAFETY: Shall only be used when the slice is not inlined
-            // otherwise the heap pointer would be garbage
-            let ptr = u64::from_ne_bytes(self.rest);
-            let ptr = ptr as *const u8; */
-
             let ptr = self.trailer.long.heap;
-
             let heap_region: *const HeapAllocationHeader = ptr.cast::<HeapAllocationHeader>();
             &*heap_region
         }
@@ -520,7 +536,8 @@ impl ByteView {
                         len,
                         prefix: [0; PREFIX_SIZE],
                         heap: unsafe { self.trailer.long.heap },
-                        data: unsafe { self.trailer.long.data.add(begin) },
+                        offset: begin as u32,
+                        original_len: unsafe { self.trailer.long.original_len },
                     }),
                 },
             };
@@ -570,7 +587,7 @@ impl ByteView {
         if self.is_inline() {
             unsafe { std::slice::from_raw_parts_mut((*self.trailer.short).data.as_mut_ptr(), len) }
         } else {
-            unsafe { std::slice::from_raw_parts_mut(self.trailer.long.data.cast_mut(), len) }
+            unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), len) }
         }
     }
 
@@ -595,7 +612,7 @@ impl ByteView {
         );
 
         // SAFETY: Shall only be called if slice is heap allocated
-        unsafe { std::slice::from_raw_parts(self.trailer.long.data, len) }
+        unsafe { std::slice::from_raw_parts(self.data_ptr(), len) }
     }
 }
 
