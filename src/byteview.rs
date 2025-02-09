@@ -777,6 +777,27 @@ mod tests {
     }
 
     #[test]
+    fn dealloc_order() {
+        let bytes = ByteView::new(&(0..32).collect::<Vec<_>>());
+        let bytes_slice = bytes.slice(..31);
+        drop(bytes);
+        drop(bytes_slice);
+    }
+
+    #[test]
+    fn dealloc_order_2() {
+        let bytes = ByteView::new(&(0..32).collect::<Vec<_>>());
+        let bytes_slice = bytes.slice(..31);
+        let bytes_slice_2 = bytes.slice(..5);
+        let bytes_slice_3 = bytes.slice(..6);
+
+        drop(bytes);
+        drop(bytes_slice);
+        drop(bytes_slice_2);
+        drop(bytes_slice_3);
+    }
+
+    #[test]
     fn from_reader_1() -> std::io::Result<()> {
         let str = b"abcdef";
         let mut cursor = Cursor::new(str);
