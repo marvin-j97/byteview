@@ -1,3 +1,4 @@
+use bytes::BufMut;
 use byteview::ByteView;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::{
@@ -207,21 +208,15 @@ fn ctor_short(c: &mut Criterion) {
     let value = b"abcdefabcdef";
 
     group.bench_function("Arc'd slice", |b| {
-        b.iter(|| {
-            let _x = std::sync::Arc::from(value);
-        });
+        b.iter(|| std::sync::Arc::from(value));
     });
 
     group.bench_function("tokio::Bytes", |b| {
-        b.iter(|| {
-            let _x = bytes::Bytes::copy_from_slice(value);
-        });
+        b.iter(|| bytes::Bytes::copy_from_slice(value));
     });
 
     group.bench_function("ByteView", |b| {
-        b.iter(|| {
-            let _x = ByteView::from(*value);
-        });
+        b.iter(|| ByteView::from(*value));
     });
 }
 
@@ -231,21 +226,15 @@ fn ctor_long(c: &mut Criterion) {
     let value = b"abcdefabcdefabcdefabcdefabcdefabcdef";
 
     group.bench_function("Arc'd slice", |b| {
-        b.iter(|| {
-            let _x = std::sync::Arc::from(value);
-        });
+        b.iter(|| std::sync::Arc::from(value));
     });
 
     group.bench_function("tokio::Bytes", |b| {
-        b.iter(|| {
-            let _x = bytes::Bytes::copy_from_slice(value);
-        });
+        b.iter(|| bytes::Bytes::copy_from_slice(value));
     });
 
     group.bench_function("ByteView", |b| {
-        b.iter(|| {
-            let _x = ByteView::from(*value);
-        });
+        b.iter(|| ByteView::from(*value));
     });
 }
 
@@ -262,7 +251,8 @@ fn ctor_from_reader(c: &mut Criterion) {
             let mut c = Cursor::new(value);
             let mut v = vec![0; value.len()];
             c.read_exact(&mut v).unwrap();
-            let _x: Arc<[u8]> = v.into();
+            let x: Arc<[u8]> = v.into();
+            x
         });
     });
 
@@ -275,6 +265,8 @@ fn ctor_from_reader(c: &mut Criterion) {
 
             let builder = Arc::get_mut(&mut v).unwrap();
             c.read_exact(builder).unwrap();
+
+            v
         });
     });
 
@@ -287,22 +279,45 @@ fn ctor_from_reader(c: &mut Criterion) {
                 let mut builder = x.get_mut().unwrap();
                 c.read_exact(&mut builder).unwrap();
             }
+            x
         });
     });
 
-    group.bench_function("tokio::Bytes", |b| {
+    group.bench_function("tokio::Bytes (zeroed)", |b| {
         b.iter(|| {
-            let mut c = Cursor::new(&value);
-            let mut builder = bytes::BytesMut::with_capacity(value.len());
+            let mut c = Cursor::new(value);
+            let mut builder = bytes::BytesMut::zeroed(value.len());
             c.read_exact(&mut builder).unwrap();
-            let _x = builder.freeze();
+            builder.freeze()
+        });
+    });
+
+    group.bench_function("tokio::Bytes (writer)", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(value).take(value.len() as u64);
+            let mut builder = bytes::BytesMut::with_capacity(value.len()).writer();
+            let n = std::io::copy(&mut c, &mut builder).unwrap();
+            assert!(n == value.len() as u64);
+            builder.into_inner().freeze()
+        });
+    });
+
+    group.bench_function("tokio::Bytes (unsafe)", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(value);
+            let mut builder = bytes::BytesMut::with_capacity(value.len());
+            unsafe {
+                builder.set_len(value.len());
+            }
+            c.read_exact(&mut builder).unwrap();
+            builder.freeze()
         });
     });
 
     group.bench_function("ByteView::from_reader", |b| {
         b.iter(|| {
             let mut c = Cursor::new(value);
-            let _x = ByteView::from_reader(&mut c, value.len()).unwrap();
+            ByteView::from_reader(&mut c, value.len()).unwrap()
         });
     });
 }
@@ -320,7 +335,8 @@ fn ctor_from_reader_blob(c: &mut Criterion) {
             let mut c = Cursor::new(&value);
             let mut v = vec![0; value.len()];
             c.read_exact(&mut v).unwrap();
-            let _x: Arc<[u8]> = v.into();
+            let x: Arc<[u8]> = v.into();
+            x
         });
     });
 
@@ -333,6 +349,7 @@ fn ctor_from_reader_blob(c: &mut Criterion) {
 
             let builder = Arc::get_mut(&mut v).unwrap();
             c.read_exact(builder).unwrap();
+            v
         });
     });
 
@@ -345,22 +362,45 @@ fn ctor_from_reader_blob(c: &mut Criterion) {
                 let mut builder = x.get_mut().unwrap();
                 c.read_exact(&mut builder).unwrap();
             }
+            x
         });
     });
 
-    group.bench_function("tokio::Bytes", |b| {
+    group.bench_function("tokio::Bytes (zeroed)", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value);
+            let mut builder = bytes::BytesMut::zeroed(value.len());
+            c.read_exact(&mut builder).unwrap();
+            builder.freeze()
+        });
+    });
+
+    group.bench_function("tokio::Bytes (writer)", |b| {
+        b.iter(|| {
+            let mut c = Cursor::new(&value).take(value.len() as u64);
+            let mut builder = bytes::BytesMut::with_capacity(value.len()).writer();
+            let n = std::io::copy(&mut c, &mut builder).unwrap();
+            assert!(n == value.len() as u64);
+            builder.into_inner().freeze()
+        });
+    });
+
+    group.bench_function("tokio::Bytes (unsafe)", |b| {
         b.iter(|| {
             let mut c = Cursor::new(&value);
             let mut builder = bytes::BytesMut::with_capacity(value.len());
+            unsafe {
+                builder.set_len(value.len());
+            }
             c.read_exact(&mut builder).unwrap();
-            let _x = builder.freeze();
+            builder.freeze()
         });
     });
 
     group.bench_function("ByteView::from_reader", |b| {
         b.iter(|| {
             let mut c = Cursor::new(&value);
-            let _x = ByteView::from_reader(&mut c, value.len()).unwrap();
+            ByteView::from_reader(&mut c, value.len()).unwrap()
         });
     });
 }
