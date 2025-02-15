@@ -334,10 +334,11 @@ impl ByteView {
 
         if !builder.is_inline() {
             unsafe {
-                let header_size = std::mem::size_of::<HeapAllocationHeader>();
-                let alignment = std::mem::align_of::<HeapAllocationHeader>();
-                let total_size = header_size + slice_len;
-                let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
+                const HEADER_SIZE: usize = std::mem::size_of::<HeapAllocationHeader>();
+                const ALIGNMENT: usize = std::mem::align_of::<HeapAllocationHeader>();
+
+                let total_size = HEADER_SIZE + slice_len;
+                let layout = std::alloc::Layout::from_size_align(total_size, ALIGNMENT).unwrap();
 
                 // IMPORTANT: Zero-allocate the region
                 let heap_ptr = std::alloc::alloc(layout);
@@ -379,13 +380,15 @@ impl ByteView {
             // SAFETY: We check for inlinability
             // so we know the the input slice fits our buffer
             unsafe {
-                let data_ptr = std::ptr::addr_of_mut!((*view.trailer.short).data) as *mut u8;
+                let data_ptr = std::ptr::addr_of_mut!((*view.trailer.short).data).cast();
                 std::ptr::copy_nonoverlapping(slice.as_ptr(), data_ptr, slice_len);
             }
         } else {
             let long_repr = unsafe { &mut *view.trailer.long };
 
             // Copy prefix
+            // SAFETY: We know that there are at least 4 bytes in the input slice
+            #[allow(clippy::indexing_slicing)]
             long_repr.prefix.copy_from_slice(&slice[0..PREFIX_SIZE]);
 
             // Copy byte slice into heap allocation
