@@ -235,7 +235,7 @@ impl ByteView {
         }
     }
 
-    /// Returns a mutable reference into the given Byteview, if there are no other pointers to the same allocation.
+    /// Returns a mutable reference into the given byteview, if there are no other pointers to the same allocation.
     pub fn get_mut(&mut self) -> Option<Mutator<'_>> {
         if self.ref_count() == 1 {
             Some(Mutator(self))
@@ -244,7 +244,7 @@ impl ByteView {
         }
     }
 
-    /// Creates a slice and populates it with  `len` bytes
+    /// Creates a byteview and populates it with  `len` bytes
     /// from the given reader.
     ///
     /// # Errors
@@ -275,25 +275,29 @@ impl ByteView {
     }
 
     fn with_size_zeroed(slice_len: usize) -> Self {
-        let Ok(len) = u32::try_from(slice_len) else {
-            panic!("byte slice too long");
-        };
+        let view = if slice_len <= INLINE_SIZE {
+            Self {
+                trailer: Trailer {
+                    short: ManuallyDrop::new(ShortRepr {
+                        // SAFETY: We know slice_len is INLINE_SIZE or less, so it must be
+                        // a valid u32
+                        #[allow(clippy::cast_possible_truncation)]
+                        len: slice_len as u32,
+                        data: [0; INLINE_SIZE],
+                    }),
+                },
+            }
+        } else {
+            let Ok(len) = u32::try_from(slice_len) else {
+                panic!("byte slice too long");
+            };
 
-        let mut builder = Self {
-            trailer: Trailer {
-                short: ManuallyDrop::new(ShortRepr {
-                    len,
-                    data: [0; INLINE_SIZE],
-                }),
-            },
-        };
-
-        if !builder.is_inline() {
             unsafe {
-                let header_size = std::mem::size_of::<HeapAllocationHeader>();
-                let alignment = std::mem::align_of::<HeapAllocationHeader>();
-                let total_size = header_size + slice_len;
-                let layout = std::alloc::Layout::from_size_align(total_size, alignment).unwrap();
+                const HEADER_SIZE: usize = std::mem::size_of::<HeapAllocationHeader>();
+                const ALIGNMENT: usize = std::mem::align_of::<HeapAllocationHeader>();
+
+                let total_size = HEADER_SIZE + slice_len;
+                let layout = std::alloc::Layout::from_size_align(total_size, ALIGNMENT).unwrap();
 
                 // IMPORTANT: Zero-allocate the region
                 let heap_ptr = std::alloc::alloc_zeroed(layout);
@@ -301,38 +305,48 @@ impl ByteView {
                     std::alloc::handle_alloc_error(layout);
                 }
 
-                // Set pointer to heap allocation address
-                (*builder.trailer.long).heap = heap_ptr;
-                (*builder.trailer.long).offset = 0;
-                (*builder.trailer.long).original_len = slice_len as u32;
-
                 // Set ref count
                 let heap_region = heap_ptr as *const HeapAllocationHeader;
                 let heap_region = &*heap_region;
                 heap_region.ref_count.store(1, Ordering::Release);
+
+                Self {
+                    trailer: Trailer {
+                        long: ManuallyDrop::new(LongRepr {
+                            len,
+                            prefix: [0; PREFIX_SIZE],
+                            heap: heap_ptr,
+                            original_len: len,
+                            offset: 0,
+                        }),
+                    },
+                }
             }
-        }
+        };
 
-        debug_assert_eq!(1, builder.ref_count());
+        debug_assert_eq!(1, view.ref_count());
 
-        builder
+        view
     }
 
     fn with_size_unchecked(slice_len: usize) -> Self {
-        let Ok(len) = u32::try_from(slice_len) else {
-            panic!("byte slice too long");
-        };
-
         let view = if slice_len <= INLINE_SIZE {
             Self {
                 trailer: Trailer {
                     short: ManuallyDrop::new(ShortRepr {
-                        len,
+                        // SAFETY: We know slice_len is INLINE_SIZE or less, so it must be
+                        // a valid u32
+                        #[allow(clippy::cast_possible_truncation)]
+                        len: slice_len as u32,
                         data: [0; INLINE_SIZE],
                     }),
                 },
             }
         } else {
+            let Ok(len) = u32::try_from(slice_len) else {
+                panic!("byte slice too long");
+            };
+
             unsafe {
                 const HEADER_SIZE: usize = std::mem::size_of::<HeapAllocationHeader>();
                 const ALIGNMENT: usize = std::mem::align_of::<HeapAllocationHeader>();
@@ -369,7 +383,7 @@ impl ByteView {
         view
     }
 
-    /// Creates a new slice from an existing byte slice.
+    /// Creates a new byteview from an existing byte slice.
     ///
     /// Will heap-allocate the slice if it has at least length 13.
     ///
@@ -461,7 +475,7 @@ impl ByteView {
         Self::new(self)
     }
 
-    /// Clones the given range of the existing slice without heap allocation.
+    /// Clones the given range of the existing byteview without heap allocation.
     ///
     /// # Examples
     ///
