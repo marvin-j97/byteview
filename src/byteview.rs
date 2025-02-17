@@ -323,16 +323,16 @@ impl ByteView {
             panic!("byte slice too long");
         };
 
-        let mut builder = Self {
-            trailer: Trailer {
-                short: ManuallyDrop::new(ShortRepr {
-                    len,
-                    data: [0; INLINE_SIZE],
-                }),
-            },
-        };
-
-        if !builder.is_inline() {
+        let view = if slice_len <= INLINE_SIZE {
+            Self {
+                trailer: Trailer {
+                    short: ManuallyDrop::new(ShortRepr {
+                        len,
+                        data: [0; INLINE_SIZE],
+                    }),
+                },
+            }
+        } else {
             unsafe {
                 const HEADER_SIZE: usize = std::mem::size_of::<HeapAllocationHeader>();
                 const ALIGNMENT: usize = std::mem::align_of::<HeapAllocationHeader>();
@@ -340,27 +340,33 @@ impl ByteView {
                 let total_size = HEADER_SIZE + slice_len;
                 let layout = std::alloc::Layout::from_size_align(total_size, ALIGNMENT).unwrap();
 
-                // IMPORTANT: Zero-allocate the region
                 let heap_ptr = std::alloc::alloc(layout);
                 if heap_ptr.is_null() {
                     std::alloc::handle_alloc_error(layout);
                 }
 
-                // Set pointer to heap allocation address
-                (*builder.trailer.long).heap = heap_ptr;
-                (*builder.trailer.long).offset = 0;
-                (*builder.trailer.long).original_len = slice_len as u32;
-
                 // Set ref count
                 let heap_region = heap_ptr as *const HeapAllocationHeader;
                 let heap_region = &*heap_region;
                 heap_region.ref_count.store(1, Ordering::Release);
+
+                Self {
+                    trailer: Trailer {
+                        long: ManuallyDrop::new(LongRepr {
+                            len,
+                            prefix: [0; PREFIX_SIZE],
+                            heap: heap_ptr,
+                            original_len: len,
+                            offset: 0,
+                        }),
+                    },
+                }
             }
-        }
+        };
 
-        debug_assert_eq!(1, builder.ref_count());
+        debug_assert_eq!(1, view.ref_count());
 
-        builder
+        view
     }
 
     /// Creates a new slice from an existing byte slice.
