@@ -244,7 +244,7 @@ impl ByteView {
         }
     }
 
-    /// Creates a byteview and populates it with  `len` bytes
+    /// Creates a byteview and populates it with `len` bytes
     /// from the given reader.
     ///
     /// # Errors
@@ -274,6 +274,11 @@ impl ByteView {
         Self::with_size_zeroed(slice_len)
     }
 
+    /// Creates a new zeroed, fixed-length byteview.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length does not fit in a u32 (4 GiB).
     fn with_size_zeroed(slice_len: usize) -> Self {
         let view = if slice_len <= INLINE_SIZE {
             Self {
@@ -329,6 +334,11 @@ impl ByteView {
         view
     }
 
+    /// Creates a new fixed-length byteview, with uninitialized contents.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length does not fit in a u32 (4 GiB).
     fn with_size_unchecked(slice_len: usize) -> Self {
         let view = if slice_len <= INLINE_SIZE {
             Self {
@@ -385,7 +395,7 @@ impl ByteView {
 
     /// Creates a new byteview from an existing byte slice.
     ///
-    /// Will heap-allocate the slice if it has at least length 13.
+    /// Will heap-allocate the slice if it has at least length 21.
     ///
     /// # Panics
     ///
